@@ -1,0 +1,12 @@
+# Local data — real message copies must never be committed
+data/
+
+# Generated test fixture (regenerate via tests/fixtures/make_fixture_db.py)
+tests/fixtures/fixture_chat.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
