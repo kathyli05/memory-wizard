@@ -10,13 +10,16 @@ so initiation-ratio logic gets exercised in both directions. Thread 2
 a contrasting case. Both threads have multiple incoming-run -> my-reply
 transitions so median response latency has more than one sample.
 
-Threads 3 and 4 exist to exercise triage.detect_unanswered: their last
+Threads 3, 4, and 5 exist to exercise triage.detect_unanswered: their last
 message is timed relative to build time (not a fixed 2026 date) so the
-"is this older than the threshold" check is correct whenever the fixture
-is built. Thread 3 ends with an incoming message ~3 days old (a triage
-candidate under the 24h default); thread 4 ends with one ~2 hours old
-(not yet a candidate under the default, but becomes one under a shorter
-threshold — useful for testing the boundary).
+"is this older than the threshold" / "is this within the lookback window"
+checks are correct whenever the fixture is built. Thread 3 ends with an
+incoming message ~3 days old (a triage candidate under the 24h default);
+thread 4 ends with one ~2 hours old (not yet a candidate under the
+default, but becomes one under a shorter threshold — useful for testing
+the boundary); thread 5 ends with one ~200 days old (past the 24h
+threshold but outside the default 150-day lookback window — excluded by
+default, included when the window is disabled or widened).
 """
 
 import sqlite3
@@ -73,6 +76,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
                 (2, "chat123456789", "Weekend Trip Planning"),
                 (3, "+15556667777", None),
                 (4, "+15554443333", None),
+                (5, "+15559998888", None),
             ],
         )
 
@@ -112,11 +116,15 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
         thread_4 = [
             (19, "on my way!", 4, 0, build_time - timedelta(hours=2)),
         ]
+        thread_5 = [
+            (20, "long time no talk, we should catch up sometime", 5, 0,
+             build_time - timedelta(days=200)),
+        ]
 
         rows = [
             (rowid, text, handle_id, is_from_me, _apple_ns(dt))
             for rowid, text, handle_id, is_from_me, dt
-            in thread_1 + thread_2 + thread_3 + thread_4
+            in thread_1 + thread_2 + thread_3 + thread_4 + thread_5
         ]
 
         conn.executemany(
@@ -128,7 +136,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
         conn.executemany(
             "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)",
             [(1, i) for i in range(1, 10)] + [(2, i) for i in range(10, 17)]
-            + [(3, 17), (3, 18), (4, 19)],
+            + [(3, 17), (3, 18), (4, 19), (5, 20)],
         )
 
         conn.commit()
