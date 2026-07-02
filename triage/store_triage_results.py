@@ -23,21 +23,25 @@ CREATE TABLE IF NOT EXISTS triage_results (
     urgency TEXT NOT NULL,
     reasoning TEXT,
     suggest_nudge INTEGER NOT NULL,
+    last_message_timestamp TEXT NOT NULL,
     computed_at TEXT NOT NULL
 );
 """
 
 _UPSERT = """
 INSERT INTO triage_results (
-    thread_id, thread_name, urgency, reasoning, suggest_nudge, computed_at
+    thread_id, thread_name, urgency, reasoning, suggest_nudge,
+    last_message_timestamp, computed_at
 ) VALUES (
-    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge, :computed_at
+    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge,
+    :last_message_timestamp, :computed_at
 )
 ON CONFLICT(thread_id) DO UPDATE SET
     thread_name=excluded.thread_name,
     urgency=excluded.urgency,
     reasoning=excluded.reasoning,
     suggest_nudge=excluded.suggest_nudge,
+    last_message_timestamp=excluded.last_message_timestamp,
     computed_at=excluded.computed_at
 """
 
@@ -62,6 +66,20 @@ def upsert_results(db_path: Path, results: list[dict]) -> None:
             [{**r, "suggest_nudge": int(r["suggest_nudge"])} for r in results],
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_last_triaged_timestamps(db_path: Path) -> dict[int, str]:
+    """thread_id -> last_message_timestamp of its most recent triage run.
+    Empty dict if no results have been stored yet (including a fresh db)."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT thread_id, last_message_timestamp FROM triage_results"
+        ).fetchall()
+        return dict(rows)
     finally:
         conn.close()
 
