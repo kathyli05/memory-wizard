@@ -7,6 +7,8 @@ agent pulls the actual last-5-messages context per candidate, minimizing
 what's held here.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from datetime import datetime, timedelta
 
