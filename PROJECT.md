@@ -1,66 +1,89 @@
-# Project: Personal Message Triage Agent
+# Project: Personal Triage Agent
 
 ## Purpose
-A privacy-conscious agentic system that triages unanswered iMessages,
-built to (a) help me manage ADHD-related response delay and (b) demonstrate
-applied Socially Responsible Computing principles: privacy-by-design,
-data minimization, user autonomy, and transparency.
+A privacy-conscious agentic system that triages unanswered messages and
+organizes screenshots, built to (a) help manage ADHD-related friction around
+responsiveness and information overload, and (b) demonstrate applied
+Socially Responsible Computing principles: privacy-by-design, data
+minimization, user autonomy, and transparency.
 
-## Architecture
-1. Ingestion: read-only copy of ~/Library/Messages/chat.db, parsed via sqlite3
-2. Contact profiles: derived signals only (response latency, frequency,
-   initiation ratio) — stored in our own local SQLite DB, separate from Apple's
-3. Triage agent: Claude API call per unanswered thread, structured JSON output
-   (urgency, reasoning, suggest_nudge)
-4. Draft agent: only invoked on user request, generates 2-3 reply options
-   in user's own tone, never auto-sends
-5. Dashboard: Streamlit, shows flagged threads + reasoning (transparency),
+## Thesis
+An agent architecture for externalized attention and memory — two intake
+channels (messages, screenshots) feeding a shared triage/categorization
+core, governed by consistent privacy and transparency principles. Core
+design question: how do you let an agent make judgment calls on someone's
+behalf (what's urgent, what's worth keeping) without being either useless
+(too conservative) or paternalistic (silently deciding for them)?
+
+## Shared architecture (both channels use this)
+- Local SQLite DB (`./data/triage.db`) for derived signals/metadata only
+- Claude API for triage/categorization judgment calls, structured JSON output
+- Streamlit dashboard, single app with tabs per channel
+- Retention/deletion policy for raw content
+- Transparency layer: always show reasoning for any suggestion
+
+## Hard constraints (apply everywhere)
+- NEVER modify or write to original data sources (chat.db, Photos library) —
+  copy/read-only access only
+- NEVER auto-send messages or auto-delete photos — all actions require
+  explicit user confirmation
+- Minimize what's sent to the Claude API per call — only relevant context,
+  not full history/full-res duplicates
+- Flag ambiguous decisions rather than silently choosing
+- Tech stack: Python 3, sqlite3 (stdlib), anthropic SDK, streamlit, osxphotos
+
+---
+
+## Channel 1: Messages
+
+### Pipeline
+1. Ingestion: copy `~/Library/Messages/chat.db` to `./data/chat_copy.db`,
+   parse via sqlite3 (timestamps are nanoseconds since 2001 epoch — convert)
+2. Contact profiles: per-thread median response latency, message frequency
+   (90 days), initiation ratio — stored as derived signals only
+3. Unanswered thread detection: deterministic, no AI — last message
+   is_from_me=0 and older than configurable threshold (default 24h)
+4. Triage agent: Claude API call per candidate thread, sending contact
+   profile + last 5 messages only. Structured output: urgency (low/med/high),
+   reasoning, suggest_nudge (bool). Model: claude-sonnet-4-6
+5. Draft agent: only on explicit request. Pulls thread context + sample of
+   past sent messages to that contact for tone-matching. Returns 2-3 draft
+   options. Never auto-sends.
+6. Dashboard tab: flagged threads sorted by urgency, reasoning shown,
    buttons for draft/dismiss/snooze
-6. Retention policy: raw message text auto-deleted from our DB after N days;
-   only derived signals persist
+7. Retention: raw message text deleted from our DB after 14 days
+   (configurable), only derived signals persist
 
-## Hard constraints
-- NEVER modify or write to the original chat.db — copy it first, work only
-  on the copy
-- NEVER auto-send messages — draft generation requires explicit user action
-- Minimize what's sent to the Claude API per call — only relevant thread
-  context, not full history
-- All design decisions should be defensible from a privacy/ethics standpoint —
-  flag any tradeoff you're not sure about rather than silently choosing
+---
 
-## Tech stack
-Python 3, sqlite3 (stdlib), anthropic SDK, streamlit
+## Channel 2: Screenshots
 
-## Channel 2 extension: Expiry detection + deletion suggestions
+### Pipeline
+1. Ingestion: osxphotos pulls screenshots + timestamps + asset IDs from
+   Photos library (read-only)
+2. Categorization: each image → Claude vision call → structured output:
+   category (place/product/quote/event/recipe/article/other), extracted_text,
+   description, tags, expires_at (nullable — event/deadline/ticket dates)
+3. Storage: derived metadata only (category, tags, description, expires_at,
+   Photos asset reference) — never duplicate full-res images
+4. Search: natural language query → Claude ranks against stored
+   descriptions/tags → top 5 matches with reasoning
+5. Expiry surfacing: weekly job flags items past expires_at as "probably stale"
+6. Deletion suggestions (screenshots/junk ONLY, not general photo library):
+   - Candidates: near-duplicate bursts, expired items, old+low-value
+     categories never revisited
+   - NEVER auto-delete — dashboard shows candidate + reasoning, user
+     accepts/rejects, deletion itself is manual (dashboard points to asset)
+7. Feedback loop: every accept/reject logged with the suggestion's features
+   (category, reason, age). Before generating new suggestions, pull past
+   accept/reject rates per category and include as context so Claude
+   calibrates. This is prompt-conditioning on aggregated history, NOT model
+   fine-tuning — document this distinction explicitly in the README.
+8. Scheduling: weekly via launchd, manually triggerable
+9. Dashboard tab: browse-by-category, search bar, stale/expiring section,
+   cleanup suggestions section with accept/reject buttons
 
-### Purpose
-Surface time-sensitive screenshots (events, deadlines, tickets) before they're
-stale, and suggest screenshot/junk deletion candidates on a recurring basis —
-with an adaptive feedback loop, never auto-deleting.
-
-### Expiry detection (deterministic, extends categorization step)
-- During categorization (Prompt 9), also extract `expires_at` if the
-  screenshot has an inherent date (event, sale, deadline, boarding pass)
-- Weekly job surfaces items where expires_at has passed, flagged as
-  "probably stale" in dashboard
-
-### Deletion suggestions (screenshots/junk only, NOT full photo library)
-- Candidates: duplicates/near-duplicate bursts, low-value categories
-  (memes, expired flyers), old + never revisited
-- NEVER auto-delete. Always surface in dashboard for accept/reject.
-- Log every accept/reject decision with the features that drove the original
-  suggestion (category, age, duplicate-of, expired-flag) to our local DB
-
-### Feedback loop (prompt-conditioning, not model fine-tuning)
-- Before generating new suggestions, pull a summary of past accept/reject
-  rates per feature/category from our DB
-- Include this summary in the prompt to Claude so it calibrates suggestions
-  (e.g. "user rejects meme-category suggestions 80% of the time, be more
-  conservative there") — this is in-context adaptation, explicitly NOT
-  training a separate classifier. Document this distinction in the README.
-
-### Scheduling
-- Runs weekly via launchd (macOS scheduler), manually triggerable too
-- Hard constraint: scope to screenshots/junk only. Do not extend deletion
-  suggestions to general photo library (people/trips/events) without
-  explicit redesign — too high-stakes for this pattern.
+### Explicit scope limit
+Deletion suggestions apply to screenshots/junk only. Do NOT extend to
+general photo library (people/trips/memories) without deliberate redesign —
+too emotionally high-stakes for an automated suggestion pattern.
