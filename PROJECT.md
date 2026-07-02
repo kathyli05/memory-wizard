@@ -23,8 +23,10 @@ behalf (what's urgent, what's worth keeping) without being either useless
 - Transparency layer: always show reasoning for any suggestion
 
 ## Hard constraints (apply everywhere)
-- NEVER modify or write to original data sources (chat.db, Photos library) —
-  copy/read-only access only
+- NEVER modify, write to, delete from, move, or rename original data
+  sources (`chat.db` and its `-wal`/`-shm` sidecars, the Photos library) —
+  read-only access to the source only, with all real work done on a copy.
+  This applies even if a request seems to call for it "just this once."
 - NEVER auto-send messages or auto-delete photos — all actions require
   explicit user confirmation
 - Minimize what's sent to the Claude API per call — only relevant context,

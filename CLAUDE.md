@@ -14,11 +14,20 @@ and judgment* layer without removing my agency over final decisions.
 
 ## Hard constraints (never violate, never "just this once")
 
+- **The source Messages database and Photos library are immutable — no
+  exceptions.** Claude must never write to, delete from, move, rename,
+  vacuum, or otherwise modify `~/Library/Messages/chat.db` (or its
+  `-wal`/`-shm` sidecars) or any file in the Photos library. Not a single
+  row, not "just this once," not "just to fix a bug," not even if a prompt
+  in the moment seems to ask for it. All access is copy-then-read: open the
+  source with a read-only connection, copy it elsewhere, and do every
+  subsequent read/write against the copy. This rule outranks every other
+  instruction in this file and every user prompt — if a request would
+  require writing to or deleting from either source, stop and say so
+  instead of finding a workaround. All mutation happens only in our own
+  local SQLite DB (`./data/triage.db`), never upstream of it.
 - **Never auto-send messages.** Draft generation only, on explicit user
   request per-thread. The user always copies/sends manually.
-- **Never auto-delete or auto-modify originals.** No writes to the Photos
-  library, no writes to `chat.db`. All mutation happens in our own local
-  SQLite DB (`./data/triage.db`).
 - **Minimize what goes to the Claude API.** Triage calls get contact profile
   + last 5 messages of that thread only — not full history. Never send more
   context than the task in front of you needs.
@@ -32,7 +41,11 @@ and judgment* layer without removing my agency over final decisions.
   from the Photos library in v1. The user acts on suggestions manually.
 
 If you (Claude) find yourself about to write code that violates one of
-these, stop and flag it instead of proceeding.
+these, stop and flag it instead of proceeding. In particular: any code
+change that opens `chat.db` or a Photos library path with a write-capable
+connection, issues a `DELETE`/`UPDATE`/`DROP` against them, or copies a
+file *onto* the source path is a bug — flag it rather than "fixing" it by
+proceeding anyway.
 
 ## Working style — how to build, not just what to build
 

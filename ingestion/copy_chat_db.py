@@ -19,6 +19,12 @@ def copy_chat_db(source: Path = DEFAULT_SOURCE, dest: Path = DEFAULT_DEST) -> Pa
     if not source.exists():
         raise FileNotFoundError(f"source chat.db not found: {source}")
 
+    if dest.resolve() == source.resolve():
+        raise ValueError(
+            "refusing to copy chat.db onto itself — dest must not be the "
+            "source path; the source is read-only and must never be written to"
+        )
+
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     src_conn = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
