@@ -48,13 +48,15 @@ behalf (what's urgent, what's worth keeping) without being either useless
 4. Triage agent: Claude API call per candidate thread, sending contact
    profile + last 5 messages only. Structured output: urgency (low/med/high),
    reasoning, suggest_nudge (bool). Model: claude-sonnet-4-6
-5. Draft agent: only on explicit request. Pulls thread context + sample of
-   past sent messages to that contact for tone-matching. Returns 2-3 draft
-   options. Never auto-sends.
-6. Dashboard tab: flagged threads sorted by urgency, reasoning shown,
-   buttons for draft/dismiss/snooze
-7. Retention: raw message text deleted from our DB after 14 days
+5. Dashboard tab: flagged threads sorted by urgency, reasoning shown,
+   buttons for dismiss/snooze
+6. Retention: raw message text deleted from our DB after 14 days
    (configurable), only derived signals persist
+
+### Explicit scope limit
+No draft-generation agent — drafting replies on someone's behalf reads as
+impersonal and disrespectful to the relationship. Triage surfaces urgency
+and reasoning; the user writes their own replies.
 
 ---
 

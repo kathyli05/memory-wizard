@@ -20,6 +20,10 @@ default, but becomes one under a shorter threshold — useful for testing
 the boundary); thread 5 ends with one ~200 days old (past the 24h
 threshold but outside the default 150-day lookback window — excluded by
 default, included when the window is disabled or widened).
+
+Thread 6 exists to exercise triage.prefilter: an unanswered OTP-style
+notification from a 6-digit shortcode sender, which should be flagged as
+automated and excluded from triage candidates before any API call.
 """
 
 import sqlite3
@@ -66,6 +70,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
                 (2, "+15557654321"),
                 (3, "+15556667777"),
                 (4, "+15554443333"),
+                (6, "782929"),
             ],
         )
 
@@ -77,6 +82,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
                 (3, "+15556667777", None),
                 (4, "+15554443333", None),
                 (5, "+15559998888", None),
+                (6, "782929", None),
             ],
         )
 
@@ -120,11 +126,15 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
             (20, "long time no talk, we should catch up sometime", 5, 0,
              build_time - timedelta(days=200)),
         ]
+        thread_6 = [
+            (21, "Your verification code is 482910. Don't share this code with anyone.",
+             6, 0, build_time - timedelta(days=2)),
+        ]
 
         rows = [
             (rowid, text, handle_id, is_from_me, _apple_ns(dt))
             for rowid, text, handle_id, is_from_me, dt
-            in thread_1 + thread_2 + thread_3 + thread_4 + thread_5
+            in thread_1 + thread_2 + thread_3 + thread_4 + thread_5 + thread_6
         ]
 
         conn.executemany(
@@ -136,7 +146,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
         conn.executemany(
             "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)",
             [(1, i) for i in range(1, 10)] + [(2, i) for i in range(10, 17)]
-            + [(3, 17), (3, 18), (4, 19), (5, 20)],
+            + [(3, 17), (3, 18), (4, 19), (5, 20), (6, 21)],
         )
 
         conn.commit()

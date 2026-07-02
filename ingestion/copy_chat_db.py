@@ -6,6 +6,7 @@ data still sitting in chat.db-wal is captured correctly.
 """
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DEFAULT_SOURCE = Path("~/Library/Messages/chat.db").expanduser()
@@ -38,3 +39,14 @@ def copy_chat_db(source: Path = DEFAULT_SOURCE, dest: Path = DEFAULT_DEST) -> Pa
         src_conn.close()
 
     return dest
+
+
+@contextmanager
+def ephemeral_copy(source: Path = DEFAULT_SOURCE, dest: Path = DEFAULT_DEST):
+    """Copy chat.db to dest, yield the path, then delete the copy — so no
+    raw message data lingers on disk longer than one pipeline run."""
+    path = copy_chat_db(source, dest)
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
