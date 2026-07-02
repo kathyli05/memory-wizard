@@ -13,8 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from triage.store_triage_results import (
     RETENTION_DAYS,
+    dismiss_result,
     enforce_retention,
+    get_active_results,
     get_last_triaged_timestamps,
+    snooze_result,
     upsert_results,
 )
 
@@ -29,6 +32,19 @@ def _read_row(db_path, thread_id):
         return dict(row)
     finally:
         conn.close()
+
+
+def _seed(db_path, thread_id, *, urgency="med", computed_at=None):
+    computed_at = computed_at or datetime.now().isoformat()
+    upsert_results(db_path, [{
+        "thread_id": thread_id,
+        "thread_name": f"+1555000{thread_id:04d}",
+        "urgency": urgency,
+        "reasoning": f"reasoning for thread {thread_id}",
+        "suggest_nudge": True,
+        "last_message_timestamp": computed_at,
+        "computed_at": computed_at,
+    }])
 
 
 def test_upsert_writes_all_fields(tmp_path):
@@ -119,3 +135,63 @@ def test_get_last_triaged_timestamps_returns_stored_values(tmp_path):
     }])
 
     assert get_last_triaged_timestamps(db_path) == {1: last_message_at}
+
+
+def test_fresh_result_defaults_to_pending(tmp_path):
+    db_path = tmp_path / "triage.db"
+    _seed(db_path, 1)
+
+    assert _read_row(db_path, 1)["status"] == "pending"
+
+
+def test_active_results_sorted_by_urgency_high_to_low(tmp_path):
+    db_path = tmp_path / "triage.db"
+    _seed(db_path, 1, urgency="low")
+    _seed(db_path, 2, urgency="high")
+    _seed(db_path, 3, urgency="med")
+
+    active = get_active_results(db_path)
+
+    assert [r["thread_id"] for r in active] == [2, 3, 1]
+
+
+def test_dismiss_removes_from_active_results(tmp_path):
+    db_path = tmp_path / "triage.db"
+    _seed(db_path, 1)
+
+    dismiss_result(db_path, 1)
+
+    assert _read_row(db_path, 1)["status"] == "dismissed"
+    assert get_active_results(db_path) == []
+
+
+def test_snoozed_thread_excluded_until_it_expires(tmp_path):
+    db_path = tmp_path / "triage.db"
+    now = datetime.now()
+    _seed(db_path, 1)
+
+    snooze_result(db_path, 1, until=now + timedelta(days=3))
+
+    # still snoozed: excluded
+    assert get_active_results(db_path, now=now) == []
+
+    # past the snooze date: reappears, and the stored status is normalized
+    # back to pending rather than just being masked at query time
+    active = get_active_results(db_path, now=now + timedelta(days=4))
+    assert [r["thread_id"] for r in active] == [1]
+    assert _read_row(db_path, 1)["status"] == "pending"
+    assert _read_row(db_path, 1)["snoozed_until"] is None
+
+
+def test_reupserting_a_dismissed_thread_reopens_it(tmp_path):
+    db_path = tmp_path / "triage.db"
+    _seed(db_path, 1, computed_at=(datetime.now() - timedelta(days=1)).isoformat())
+    dismiss_result(db_path, 1)
+    assert get_active_results(db_path) == []
+
+    # a new triage run for this thread (i.e. a new message arrived) should
+    # naturally reopen it, with no dismiss-specific logic needed
+    _seed(db_path, 1, computed_at=datetime.now().isoformat())
+
+    active = get_active_results(db_path)
+    assert [r["thread_id"] for r in active] == [1]
