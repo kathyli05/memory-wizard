@@ -1,12 +1,18 @@
 """Build a synthetic SQLite db that mirrors chat.db's real table structure.
 
-Used only to sanity-check ingestion.parse_messages against a known schema —
-this is NOT real message data. There is no macOS Messages database available
-in this environment to copy from.
+Used only to sanity-check ingestion.parse_messages and contacts.build_profiles
+against a known schema — this is NOT real message data. There is no macOS
+Messages database available in this environment to copy from.
+
+Thread 1 (1:1) has 3 conversations (gaps >24h) alternating who initiates,
+so initiation-ratio logic gets exercised in both directions. Thread 2
+(group chat) has 2 conversations, both initiated by the same contact, as
+a contrasting case. Both threads have multiple incoming-run -> my-reply
+transitions so median response latency has more than one sample.
 """
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 APPLE_EPOCH = datetime(2001, 1, 1)
@@ -55,31 +61,37 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
             ],
         )
 
-        base = datetime(2026, 6, 20, 9, 0, 0)
+        # (rowid, text, handle_id, is_from_me, datetime)
         thread_1 = [
-            (1, "hey, are we still on for saturday?", 1, 0, 0),
-            (2, "yeah! what time works", None, 1, 1),
-            (3, "noon good?", 1, 0, 2),
-            (4, "works for me", None, 1, 3),
-            (5, "see you then", 1, 0, 4),
+            # conversation A — they initiate
+            (1, "hey, are we still on for saturday?", 1, 0, datetime(2026, 6, 1, 10, 0)),
+            (2, "yeah! what time works", None, 1, datetime(2026, 6, 1, 11, 30)),
+            (3, "noon good?", 1, 0, datetime(2026, 6, 1, 11, 32)),
+            (4, "works for me", None, 1, datetime(2026, 6, 1, 11, 40)),
+            (5, "see you then", 1, 0, datetime(2026, 6, 1, 11, 41)),
+            # conversation B (gap >24h) — I initiate
+            (6, "hey I'm running late", None, 1, datetime(2026, 6, 5, 9, 0)),
+            (7, "no worries, see you soon", 1, 0, datetime(2026, 6, 5, 9, 20)),
+            # conversation C (gap >24h) — they initiate
+            (8, "you around this weekend?", 1, 0, datetime(2026, 6, 15, 8, 0)),
+            (9, "yes! let's do something", None, 1, datetime(2026, 6, 15, 20, 0)),
         ]
         thread_2 = [
-            (6, "who's driving on friday", 1, 0, 0),
-            (7, "I can drive", None, 1, 1),
-            (8, "same, I have the bigger car though", 2, 0, 2),
-            (9, "ok you drive then", None, 1, 3),
-            (10, "packing list?", 1, 0, 4),
-            (11, "I'll send one tonight", None, 1, 5),
-            (12, "hotel confirmed btw", 2, 0, 6),
+            # conversation A — handle 1 initiates
+            (10, "who's driving on friday", 1, 0, datetime(2026, 6, 10, 9, 0)),
+            (11, "I can take my car", 2, 0, datetime(2026, 6, 10, 9, 5)),
+            (12, "sounds good, I'll bring snacks", None, 1, datetime(2026, 6, 10, 9, 10)),
+            (13, "packing list?", 1, 0, datetime(2026, 6, 10, 9, 12)),
+            (14, "I'll send one tonight", None, 1, datetime(2026, 6, 10, 9, 20)),
+            # conversation B (gap >24h) — handle 1 initiates again
+            (15, "hotel confirmed btw", 1, 0, datetime(2026, 6, 25, 14, 0)),
+            (16, "awesome, thanks!", None, 1, datetime(2026, 6, 25, 14, 30)),
         ]
 
-        rows = []
-        for rowid, text, handle_id, is_from_me, minute_offset in thread_1:
-            rows.append((rowid, text, handle_id, is_from_me,
-                          _apple_ns(base + timedelta(minutes=minute_offset))))
-        for rowid, text, handle_id, is_from_me, minute_offset in thread_2:
-            rows.append((rowid, text, handle_id, is_from_me,
-                          _apple_ns(base + timedelta(hours=3, minutes=minute_offset))))
+        rows = [
+            (rowid, text, handle_id, is_from_me, _apple_ns(dt))
+            for rowid, text, handle_id, is_from_me, dt in thread_1 + thread_2
+        ]
 
         conn.executemany(
             "INSERT INTO message (ROWID, text, handle_id, is_from_me, date) "
@@ -89,7 +101,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
 
         conn.executemany(
             "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)",
-            [(1, i) for i in range(1, 6)] + [(2, i) for i in range(6, 13)],
+            [(1, i) for i in range(1, 10)] + [(2, i) for i in range(10, 17)],
         )
 
         conn.commit()
