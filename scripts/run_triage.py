@@ -16,7 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from contacts.build_profiles import compute_all_profiles
 from ingestion.parse_messages import parse_messages
-from triage.detect_unanswered import DEFAULT_THRESHOLD_HOURS, find_unanswered_threads
+from triage.detect_unanswered import (
+    DEFAULT_LOOKBACK_DAYS,
+    DEFAULT_THRESHOLD_HOURS,
+    find_unanswered_threads,
+)
 from triage.triage_agent import build_request, last_n_messages, run_triage
 
 DEFAULT_SOURCE = Path("./data/chat_copy.db")
@@ -32,15 +36,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--threshold-hours", type=float, default=DEFAULT_THRESHOLD_HOURS)
+    parser.add_argument("--lookback-days", type=float, default=DEFAULT_LOOKBACK_DAYS,
+                         help="ignore threads whose last message is older than this many "
+                              "days; pass a very large value to disable")
     parser.add_argument("--call", action="store_true",
                          help="actually call the Claude API; omit to only preview requests")
     args = parser.parse_args()
 
     messages = parse_messages(args.source)
-    candidates = find_unanswered_threads(messages, threshold_hours=args.threshold_hours)
+    candidates = find_unanswered_threads(
+        messages, threshold_hours=args.threshold_hours, lookback_days=args.lookback_days
+    )
     profiles_by_thread = {p["thread_id"]: p for p in compute_all_profiles(messages)}
 
-    print(f"{len(candidates)} candidate thread(s) for triage\n")
+    print(f"{len(candidates)} candidate thread(s) for triage "
+          f"(last {args.lookback_days:.0f} days)\n")
 
     client = None
     if args.call:
