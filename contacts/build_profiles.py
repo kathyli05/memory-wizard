@@ -5,6 +5,8 @@ return derived-signal dicts only. No message text is read or retained
 beyond this computation.
 """
 
+from __future__ import annotations
+
 import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta
