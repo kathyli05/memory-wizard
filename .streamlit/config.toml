@@ -1,0 +1,13 @@
+# Security posture for the triage dashboard (see SECURITY_REVIEW.md, F1).
+#
+# The dashboard displays contact identities and reasoning derived from
+# message content, and every page load snapshots chat.db — it must never
+# be reachable from the network. Streamlit's default bind is all
+# interfaces (0.0.0.0), so pin it to loopback here. If remote access is
+# ever needed, tunnel (SSH/Tailscale) — do not change this address.
+
+[server]
+address = "localhost"
+
+[browser]
+gatherUsageStats = false

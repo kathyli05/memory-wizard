@@ -2,11 +2,19 @@
 
 Read/action-only: this app never calls the Claude API. It only displays
 results from triage runs kicked off separately (CLI or a scheduled job)
-and lets you dismiss/snooze them. On every load it re-derives "is this
-thread actually still unanswered" from your current chat.db (deterministic,
-free) via the same ephemeral-copy path the CLI scripts use, so a thread
-you've already replied to in Messages disappears immediately rather than
-waiting for the next triage run to catch up.
+and lets you dismiss/snooze them. It re-derives "is this thread actually
+still unanswered" from your current chat.db (deterministic, free) via the
+same ephemeral-copy path the CLI scripts use — cached for a short TTL so
+button clicks don't re-snapshot chat.db on every rerun; the Refresh
+button clears the cache for an immediate re-check.
+
+Security posture (see SECURITY_REVIEW.md):
+- Serve on localhost only — enforced by .streamlit/config.toml (F1).
+- `reasoning` and `thread_name` are influenced by untrusted third-party
+  message content via the model; they are rendered as escaped/plain text,
+  never as markdown, so injected output can't create links or trigger
+  image fetches (F2).
+- Retention is enforced on every load, not only after triage runs (F4).
 
 Run with:
     streamlit run dashboard/app.py
@@ -17,6 +25,7 @@ Override data sources for testing via env vars:
 """
 
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +39,7 @@ from ingestion.parse_messages import parse_messages
 from triage.detect_unanswered import find_unanswered_threads
 from triage.store_triage_results import (
     dismiss_result,
+    enforce_retention,
     get_active_results,
     get_last_triaged_timestamps,
     snooze_result,
@@ -38,7 +48,18 @@ from triage.store_triage_results import (
 CHAT_DB_SOURCE = Path(os.environ.get("CHAT_DB_SOURCE", str(REAL_CHAT_DB_SOURCE)))
 TRIAGE_DB_PATH = Path(os.environ.get("TRIAGE_DB_PATH", "./data/triage.db"))
 
+LIVE_CHECK_TTL_SECONDS = 60
+
 URGENCY_ALERT = {"high": st.error, "med": st.warning, "low": st.info}
+
+# Streamlit renders alert/markdown text as markdown; thread names come from
+# chat.db (group members can set them) so every markdown-active character
+# gets backslash-escaped before display.
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!<>|~$:])")
+
+
+def _escape_markdown(text: str) -> str:
+    return _MD_SPECIAL.sub(r"\\\1", str(text))
 
 
 def _format_hours(hours: float) -> str:
@@ -47,13 +68,22 @@ def _format_hours(hours: float) -> str:
     return f"{hours / 24:.1f}d ago"
 
 
+@st.cache_data(ttl=LIVE_CHECK_TTL_SECONDS, show_spinner=False)
+def _live_unanswered_candidates():
+    """Snapshot chat.db and detect unanswered threads. Cached so widget
+    clicks (which rerun the whole script) don't re-copy chat.db each time;
+    the raw message list never leaves this function."""
+    with ephemeral_copy(source=CHAT_DB_SOURCE) as chat_copy_path:
+        messages = parse_messages(chat_copy_path)
+    return find_unanswered_threads(messages)
+
+
 def load_dashboard_data():
     """Live-recheck against current Messages, intersected with stored
     (non-dismissed/non-snoozed) triage results."""
-    with ephemeral_copy(source=CHAT_DB_SOURCE) as chat_copy_path:
-        messages = parse_messages(chat_copy_path)
+    enforce_retention(TRIAGE_DB_PATH)
 
-    candidates = find_unanswered_threads(messages)
+    candidates = _live_unanswered_candidates()
     live_unanswered_ids = {c["thread_id"] for c in candidates}
     hours_by_thread = {c["thread_id"]: c["hours_since_last_message"] for c in candidates}
 
@@ -91,10 +121,15 @@ def render_card(result: dict, hours_by_thread: dict):
     age_label = _format_hours(hours) if hours is not None else "unknown"
 
     with st.container(border=True):
-        alert(f"**{result['thread_name']}** — {urgency.upper()} · unanswered {age_label}")
+        # thread_name is escaped and reasoning rendered as plain text — both
+        # are untrusted-content-derived; markdown rendering would let an
+        # injected message create links or exfiltrating image fetches (F2).
+        alert(f"**{_escape_markdown(result['thread_name'])}** — {urgency.upper()} · unanswered {age_label}")
 
-        reasoning = result["reasoning"] or "_(reasoning no longer available — past the 14-day retention window)_"
-        st.markdown(reasoning)
+        if result["reasoning"]:
+            st.text(result["reasoning"])
+        else:
+            st.caption("Reasoning no longer available — past the 14-day retention window.")
         if result["suggest_nudge"]:
             st.caption("💡 Suggested: consider sending a nudge")
 
@@ -112,6 +147,7 @@ def main():
     st.title("📬 Message Triage")
 
     if st.button("🔄 Refresh"):
+        _live_unanswered_candidates.clear()
         st.rerun()
 
     flagged, hours_by_thread, untriaged_count = load_dashboard_data()

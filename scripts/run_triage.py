@@ -11,7 +11,10 @@ the intermediate file (an explicit opt-in, off by default).
 
 Without --call, this only prints the exact request payload that would be
 sent to the Claude API per candidate thread — no network call is made and
-no storage is touched. Two kinds of candidates never reach a request, both
+no storage is touched. With --call, message text and reasoning are NOT
+printed: scheduled (launchd) runs redirect stdout to log files, and raw
+content sitting in logs would outlive the retention policy that scrubs
+the database. Real runs log thread ids, counts, and scores only. Two kinds of candidates never reach a request, both
 listed separately so nothing is silently dropped:
   - flagged as automated notifications (OTP codes, shortcode senders) —
     see triage.prefilter
@@ -126,9 +129,13 @@ def _run(chat_copy_path: Path, args):
     if filtered:
         print(f"{len(filtered)} filtered as likely automated (not sent to triage):")
         for candidate, last_message in filtered:
-            snippet = last_message["text"][:80]
-            print(f"  thread_id={candidate['thread_id']} "
-                  f"sender={last_message['sender']!r} text={snippet!r}")
+            line = (f"  thread_id={candidate['thread_id']} "
+                    f"sender={last_message['sender']!r}")
+            if not args.call:
+                # preview mode only — never put message text on --call stdout,
+                # which launchd may be persisting to a log file
+                line += f" text={last_message['text'][:80]!r}"
+            print(line)
         print()
 
     print(f"{len(to_triage)} candidate(s) proceeding to triage\n")
@@ -143,21 +150,23 @@ def _run(chat_copy_path: Path, args):
         thread_id = candidate["thread_id"]
         profile = profiles_by_thread[thread_id]
 
-        request = build_request(profile, thread_messages)
         print(f"=== thread_id={thread_id} ({profile['thread_name']}) ===")
-        print(json.dumps(request, indent=2, default=_json_default))
-        print()
 
         if args.call:
+            # No payload/reasoning echo on real runs — see module docstring.
+            print(f"sending triage request ({len(thread_messages)} messages in context)")
             result = run_triage(client, profile, thread_messages)
             result["thread_name"] = profile["thread_name"]
             result["last_message_timestamp"] = candidate["last_message_timestamp"].isoformat()
             result["computed_at"] = datetime.now().isoformat()
-            print("result:", result)
+            print(f"result: urgency={result['urgency']} "
+                  f"suggest_nudge={result['suggest_nudge']}")
             print()
             results.append(result)
         else:
-            print("--call not passed: request not sent\n")
+            request = build_request(profile, thread_messages)
+            print(json.dumps(request, indent=2, default=_json_default))
+            print("\n--call not passed: request not sent\n")
 
     if args.call:
         upsert_results(args.dest, results)

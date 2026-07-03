@@ -17,6 +17,7 @@ happens without any extra plumbing.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -68,7 +69,11 @@ ORDER BY CASE urgency WHEN 'high' THEN 0 WHEN 'med' THEN 1 WHEN 'low' THEN 2 ELS
 
 def init_db(db_path: Path) -> None:
     db_path = Path(db_path)
+    parent_existed = db_path.parent.exists()
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not parent_existed:
+        # owner-only when we created it (never tighten a pre-existing user dir)
+        os.chmod(db_path.parent, 0o700)
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
@@ -159,10 +164,12 @@ def snooze_result(db_path: Path, thread_id: int, until: datetime) -> None:
 
 def enforce_retention(db_path: Path, *, now: datetime | None = None) -> int:
     """Null out `reasoning` on rows older than RETENTION_DAYS. Returns the
-    number of rows scrubbed."""
+    number of rows scrubbed. Called by both triage runs and every dashboard
+    load, so stale reasoning gets scrubbed even if triage stops running."""
     now = now or datetime.now()
     cutoff = (now - timedelta(days=RETENTION_DAYS)).isoformat()
 
+    init_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(

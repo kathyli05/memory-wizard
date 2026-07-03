@@ -9,6 +9,14 @@ Conservative by design: any imperative-ask language (reply, confirm, Y/N,
 STOP, ...) overrides the filter, since that could be a real action item —
 better to send a borderline case to triage than silently drop something
 that needed a response.
+
+One deliberate exception: compliance opt-out footers ("Reply STOP to
+unsubscribe") are a hallmark of automated marketing, not a real ask, and
+they contain exactly the words ("reply", "stop") that trip the imperative
+override. The footer is stripped before the override check and counts as
+an automated-text signal itself — otherwise nearly all marketing spam
+would ride its own unsubscribe footer into a paid API call, feeding the
+most adversarial text on the phone straight into the model prompt.
 """
 
 from __future__ import annotations
@@ -29,6 +37,14 @@ _AUTOMATED_TEXT_PATTERNS = [
     re.compile(r"do ?n['’]?t share this code", re.I),
 ]
 
+# "Reply STOP to unsubscribe" / "Text STOP to opt out" / "STOP to end" —
+# the standard carrier-compliance footer on automated marketing texts.
+_OPT_OUT_FOOTER = re.compile(
+    r"(?:\breply\b|\btext\b|\bsend\b)[^a-z0-9]{0,3}stop\b"
+    r"|\bstop\s*(?:to|=|2)\s*(?:cancel|end|quit|opt[\s-]?out|unsub\w*)",
+    re.I,
+)
+
 _IMPERATIVE_OVERRIDE_PATTERNS = [
     re.compile(r"\breply\b", re.I),
     re.compile(r"\bconfirm\b", re.I),
@@ -42,13 +58,18 @@ _IMPERATIVE_OVERRIDE_PATTERNS = [
 
 def is_likely_automated(sender: str, text: str) -> bool:
     """True if this message is an obvious automated notification that
-    doesn't need triage (an OTP code, a shortcode ping) and False otherwise
-    — including whenever the text carries an imperative ask, regardless of
-    the other signals."""
-    if any(p.search(text) for p in _IMPERATIVE_OVERRIDE_PATTERNS):
+    doesn't need triage (an OTP code, a shortcode ping, a marketing blast
+    with an opt-out footer) and False otherwise — including whenever the
+    text carries a genuine imperative ask. Opt-out footers don't count as
+    imperative asks: they're stripped before the override check."""
+    text_without_footer = _OPT_OUT_FOOTER.sub(" ", text)
+    if any(p.search(text_without_footer) for p in _IMPERATIVE_OVERRIDE_PATTERNS):
         return False
 
     if _SHORTCODE_SENDER.match(sender or ""):
+        return True
+
+    if _OPT_OUT_FOOTER.search(text):
         return True
 
     return any(p.search(text) for p in _AUTOMATED_TEXT_PATTERNS)

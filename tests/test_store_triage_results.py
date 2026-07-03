@@ -47,6 +47,13 @@ def _seed(db_path, thread_id, *, urgency="med", computed_at=None):
     }])
 
 
+def test_enforce_retention_is_safe_on_a_fresh_db(tmp_path):
+    # The dashboard calls this on every load, possibly before any triage
+    # run has ever created the table — it must init rather than raise.
+    db_path = tmp_path / "triage.db"
+    assert enforce_retention(db_path) == 0
+
+
 def test_upsert_writes_all_fields(tmp_path):
     db_path = tmp_path / "triage.db"
     now = datetime.now().isoformat()
