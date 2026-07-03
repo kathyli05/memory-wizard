@@ -6,7 +6,7 @@ from scripts import run_triage_eval
 
 def test_cases_validate_and_preserve_last_five_cap():
     cases = run_triage_eval.load_cases(run_triage_eval.DEFAULT_CASES)
-    assert len(cases) == 10
+    assert len(cases) == 20
     assert {case["split"] for case in cases} == {"development", "holdout"}
     assert all(len(case["request_messages"]) <= 5 for case in cases)
     assert all(case["profile"]["median_response_latency_seconds_365d"] is None
@@ -86,11 +86,38 @@ def test_mocked_paid_eval_writes_separate_report(monkeypatch, capsys, tmp_path):
     assert report["failure_count"] == 0
     assert report["metrics"]["per_class"]["high"]["recall"] == 1.0
     assert report["token_totals"]["input_tokens"] == 200
-    assert "reasoning" not in json.dumps(report)
+    assert report["cases"][0]["prediction"]["reasoning"] == "Mocked derived rationale"
+    assert "Mocked derived rationale" in markdown
+    assert "Manual rationale review" in markdown
+    assert "request" not in report["cases"][0]
     assert "Overall urgency agreement: 100.0%" in markdown
     assert "High-urgency recall: 100.0%" in markdown
     assert len(list(report_dir.glob("*-paid.json"))) == 1
     assert len(list(report_dir.glob("*-paid.md"))) == 1
+
+
+def test_markdown_report_escapes_synthetic_rationale_table_content():
+    report = {
+        "mode": "paid", "created_at": "2030-01-01T00:00:00",
+        "prompt_version": "test", "prompt_fingerprint": "abc", "model": "test",
+        "case_count": 1, "split_counts": {"development": 1, "holdout": 0},
+        "api_call_count": 1, "success_count": 1, "failure_count": 0,
+        "metrics": run_triage_eval.metrics([{
+            "status": "success",
+            "expected": {"urgency": "high", "suggest_nudge": True, "needs_review": False},
+            "prediction": {"urgency": "high", "suggest_nudge": True, "needs_review": False},
+        }]),
+        "cases": [{
+            "case_id": "synthetic-1", "status": "success",
+            "expected": {"urgency": "high"},
+            "prediction": {"urgency": "high", "suggest_nudge": True,
+                           "needs_review": False, "reasoning": "First | second\nline"},
+        }],
+        "token_totals": {name: 0 for name in run_triage_eval.TOKEN_FIELDS},
+        "estimated_cost_usd": 0.0, "pricing_version": "test",
+    }
+    markdown = run_triage_eval._markdown_report(report)
+    assert "First \\| second line" in markdown
 
 
 def test_metrics_include_high_recall_and_false_positive_rate():

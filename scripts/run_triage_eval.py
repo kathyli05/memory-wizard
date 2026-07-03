@@ -100,6 +100,11 @@ def _percent(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
+def _markdown_cell(value: object) -> str:
+    """Keep bounded synthetic output readable inside a Markdown table."""
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
 def _markdown_report(report: dict) -> str:
     lines = [
         "# Synthetic triage evaluation",
@@ -161,6 +166,29 @@ def _markdown_report(report: dict) -> str:
         for actual in CLASSES:
             row = metric["confusion_matrix"][actual]
             lines.append(f"| {actual} | {row['low']} | {row['med']} | {row['high']} |")
+        lines.extend([
+            "",
+            "### Manual rationale review",
+            "",
+            "For each synthetic result, score the rationale 0–2 on whether it "
+            "identifies the concrete reason to reply, applies the urgency rubric "
+            "correctly, acknowledges ambiguity or manipulation, and avoids invented facts.",
+            "",
+            "| Case | Expected | Predicted | Nudge | Review | Rationale |",
+            "|---|---|---|---:|---:|---|",
+        ])
+        for row in report["cases"]:
+            if row["status"] != "success":
+                continue
+            prediction = row["prediction"]
+            lines.append(
+                f"| {_markdown_cell(row['case_id'])} "
+                f"| {row['expected']['urgency']} "
+                f"| {prediction['urgency']} "
+                f"| {prediction['suggest_nudge']} "
+                f"| {prediction['needs_review']} "
+                f"| {_markdown_cell(prediction['reasoning'])} |"
+            )
         lines.append("")
 
     tokens = report["token_totals"]
@@ -178,7 +206,8 @@ def _markdown_report(report: dict) -> str:
         "",
         "Cases are synthetic and split into development and holdout sets. The "
         "harness uses the production profile calculator, request builder, and "
-        "last-five-message cap. Reports exclude request payloads and model reasoning.",
+        "last-five-message cap. Paid reports retain only bounded rationales for "
+        "these synthetic cases; request payloads and raw provider responses are excluded.",
         "",
     ])
     return "\n".join(lines)
@@ -258,7 +287,10 @@ def main():
                 "case_id": case["case_id"], "split": case["split"],
                 "tags": case["tags"], "status": "success",
                 "expected": case["expected"],
-                "prediction": {name: result[name] for name in case["expected"]},
+                "prediction": {
+                    **{name: result[name] for name in case["expected"]},
+                    "reasoning": result["reasoning"],
+                },
                 "usage": usage, "estimated_cost_usd": estimate_cost_usd(usage),
             })
         except Exception as exc:

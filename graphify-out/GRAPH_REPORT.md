@@ -1,16 +1,16 @@
 # Graph Report - memory-wizard  (2026-07-03)
 
 ## Corpus Check
-- 64 files · ~43,681 words
+- 64 files · ~44,400 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 480 nodes · 837 edges · 43 communities (33 shown, 10 thin omitted)
+- 485 nodes · 843 edges · 42 communities (32 shown, 10 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 5 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9eb74967`
+- Built from commit: `61acf136`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,7 +19,6 @@
 - [[_COMMUNITY_run_triage.py|run_triage.py]]
 - [[_COMMUNITY_ephemeral_copy|ephemeral_copy]]
 - [[_COMMUNITY_test_contact_names.py|test_contact_names.py]]
-- [[_COMMUNITY_parse_messages|parse_messages]]
 - [[_COMMUNITY_What You Must Do When Invoked|What You Must Do When Invoked]]
 - [[_COMMUNITY_What You Must Do When Invoked|What You Must Do When Invoked]]
 - [[_COMMUNITY_test_run_triage_script.py|test_run_triage_script.py]]
@@ -79,27 +78,23 @@
 ## Import Cycles
 - None detected.
 
-## Communities (43 total, 10 thin omitted)
+## Communities (42 total, 10 thin omitted)
 
 ### Community 0 - "app.py"
-Cohesion: 0.08
-Nodes (57): NullContactResolver, contact_name_controls(), _contact_resolver(), _escape(), _format_hours(), _live_unanswered_candidates(), load_dashboard_data(), main() (+49 more)
+Cohesion: 0.09
+Nodes (54): contact_name_controls(), _contact_resolver(), _escape(), _format_hours(), load_dashboard_data(), main(), Streamlit dashboard for the Messages triage channel.  Read/action-only: this app, HTML-escape untrusted text for embedding in our static markup.      Escaping cov (+46 more)
 
 ### Community 1 - "run_triage.py"
 Cohesion: 0.09
-Nodes (37): compute_all_profiles(), Exception, _create_anthropic_client(), _empty_usage(), load_cases(), main(), _markdown_report(), metrics() (+29 more)
+Nodes (39): compute_all_profiles(), Exception, _create_anthropic_client(), _empty_usage(), load_cases(), main(), _markdown_cell(), _markdown_report() (+31 more)
 
 ### Community 2 - "ephemeral_copy"
-Cohesion: 0.11
-Nodes (32): copy_chat_db(), ephemeral_copy(), Path, Read-only snapshot of the macOS Messages database.  Never opens the source for w, Delete leftover ephemeral copies (base's stem + unique suffix) older     than ma, Copy chat.db to a unique path derived from dest, yield the path, then     delete, sweep_stale_copies(), _unique_copy_path() (+24 more)
+Cohesion: 0.06
+Nodes (58): _live_unanswered_candidates(), Snapshot chat.db and detect unanswered threads. Cached so widget     clicks (whi, copy_chat_db(), ephemeral_copy(), Path, Read-only snapshot of the macOS Messages database.  Never opens the source for w, Delete leftover ephemeral copies (base's stem + unique suffix) older     than ma, Copy chat.db to a unique path derived from dest, yield the path, then     delete (+50 more)
 
 ### Community 3 - "test_contact_names.py"
 Cohesion: 0.12
-Nodes (25): AccessCommand, MacOSContactResolver, Permission-aware wrapper around the fixed local Contacts helper.  The helper is, choose_unambiguous_name(), ContactRecord, ContactResolver, default_phone_region(), _display_name() (+17 more)
-
-### Community 4 - "parse_messages"
-Cohesion: 0.14
-Nodes (24): _apple_date_to_datetime(), _decode_attributed_body(), parse_messages(), datetime, Path, Parse a chat.db copy into a clean per-thread message list.  Schema reference (re, Decode Messages' NSArchiver-serialized attributed string safely.      The text i, _candidate_thread_ids() (+16 more)
+Nodes (26): AccessCommand, MacOSContactResolver, Permission-aware wrapper around the fixed local Contacts helper.  The helper is, choose_unambiguous_name(), ContactRecord, ContactResolver, default_phone_region(), _display_name() (+18 more)
 
 ### Community 5 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -146,8 +141,8 @@ Cohesion: 0.22
 Nodes (8): Commands, Development and holdout cases, Failure behavior, How the triage system works, The end-to-end flow, The synthetic evaluation harness, What observability means here, Why prompt versions and fingerprints both exist
 
 ### Community 16 - "AGENTS.md — Personal Information Triage System"
-Cohesion: 0.25
-Nodes (7): AGENTS.md — Personal Information Triage System, graphify, Hard constraints (never violate, never "just this once"), Project thesis, Tech stack reference, When something feels off, Working style — how to build, not just what to build
+Cohesion: 0.20
+Nodes (9): AGENTS.md — Personal Information Triage System, Dual purpose — personal product and interview portfolio, graphify, Hard constraints (never violate, never "just this once"), Local project journal — external memory for every request, Project thesis, Tech stack reference, When something feels off (+1 more)
 
 ### Community 17 - "CLAUDE.md — Personal Information Triage System"
 Cohesion: 0.25
@@ -186,24 +181,24 @@ Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
 ## Knowledge Gaps
-- **125 isolated node(s):** `build.sh script`, `Usage`, `What graphify is for`, `Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)`, `Step 1 - Ensure graphify is installed` (+120 more)
+- **127 isolated node(s):** `build.sh script`, `Usage`, `What graphify is for`, `Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)`, `Step 1 - Ensure graphify is installed` (+122 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `parse_messages()` connect `parse_messages` to `app.py`, `run_triage.py`, `ephemeral_copy`?**
+- **Why does `parse_messages()` connect `ephemeral_copy` to `app.py`, `run_triage.py`?**
   _High betweenness centrality (0.056) - this node is a cross-community bridge._
 - **Why does `ephemeral_copy()` connect `ephemeral_copy` to `app.py`, `run_triage.py`, `test_run_triage_script.py`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
 - **Why does `MacOSContactResolver` connect `test_contact_names.py` to `app.py`?**
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **What connects `Compute per-thread contact profiles from parsed messages.  Pure functions — take`, `True for a deferral that promises a later substantive response.`, `thread_messages must be one thread's messages, sorted by timestamp ascending.` to the rest of the system?**
-  _184 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _187 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08418079096045197 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09022556390977443 - nodes in this community are weakly interconnected._
 - **Should `run_triage.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08603145235892692 - nodes in this community are weakly interconnected._
 - **Should `ephemeral_copy` be split into smaller, more focused modules?**
-  _Cohesion score 0.10810810810810811 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06409130816505706 - nodes in this community are weakly interconnected._

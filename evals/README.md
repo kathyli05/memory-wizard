@@ -22,15 +22,15 @@ python3 scripts/run_triage_eval.py
 A paid run requires two deliberate flags:
 
 ```bash
-python3 scripts/run_triage_eval.py --call --confirm-eval --max-cases 10
+python3 scripts/run_triage_eval.py --call --confirm-eval --max-cases 20
 ```
 
 Every run writes timestamped JSON and Markdown files under `evals/reports/` and
 refreshes `latest.json` and `latest.md`. Paid reports contain predictions,
-metrics, safe failure categories, token totals, cost estimates, and prompt
-provenance. Preview reports contain validation and provenance only. Reports are
-separate from `data/triage.db`, locally ignored by Git, and never contain request
-payloads or model reasoning.
+bounded rationales for synthetic cases, metrics, safe failure categories, token
+totals, cost estimates, and prompt provenance. Preview reports contain validation
+and provenance only. Reports are separate from `data/triage.db`, locally ignored
+by Git, and never contain request payloads or raw provider responses.
 
 ## Manual reasoning-quality rubric
 
