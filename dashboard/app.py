@@ -36,6 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ingestion.copy_chat_db import DEFAULT_SOURCE as REAL_CHAT_DB_SOURCE, ephemeral_copy
 from ingestion.parse_messages import parse_messages
+from contacts.macos_contacts import MacOSContactResolver
+from contacts.name_resolver import NullContactResolver, resolved_thread_names
 from triage.detect_unanswered import find_unanswered_threads
 from triage.store_triage_results import (
     dismiss_result,
@@ -78,22 +80,47 @@ def _live_unanswered_candidates():
     return find_unanswered_threads(messages)
 
 
-def load_dashboard_data():
+def load_dashboard_data(contact_resolver=None):
     """Live-recheck against current Messages, intersected with stored
     (non-dismissed/non-snoozed) triage results."""
     enforce_retention(TRIAGE_DB_PATH)
 
     candidates = _live_unanswered_candidates()
+    resolver = contact_resolver or NullContactResolver()
+    display_names = resolved_thread_names(candidates, resolver)
     live_unanswered_ids = {c["thread_id"] for c in candidates}
     hours_by_thread = {c["thread_id"]: c["hours_since_last_message"] for c in candidates}
 
     active_results = get_active_results(TRIAGE_DB_PATH)
-    flagged = [r for r in active_results if r["thread_id"] in live_unanswered_ids]
+    flagged = []
+    for result in active_results:
+        if result["thread_id"] in live_unanswered_ids:
+            rendered = dict(result)
+            rendered["thread_name"] = display_names[result["thread_id"]]
+            flagged.append(rendered)
 
     all_triaged_ids = set(get_last_triaged_timestamps(TRIAGE_DB_PATH).keys())
     untriaged_count = len(live_unanswered_ids - all_triaged_ids)
 
     return flagged, hours_by_thread, untriaged_count
+
+
+@st.cache_resource
+def _contact_resolver():
+    return MacOSContactResolver()
+
+
+def contact_name_controls(resolver) -> bool:
+    """Return whether local resolution is available; never expose contact data."""
+    status = resolver.authorization_status()
+    if status in {"authorized", "limited"}:
+        return True
+    if status == "not-determined":
+        if st.button("Enable saved contact names"):
+            return resolver.request_access() in {"authorized", "limited"}
+    elif status in {"denied", "restricted"}:
+        st.caption("Saved contact names are unavailable; showing message identifiers.")
+    return False
 
 
 def render_snooze_controls(thread_id: int):
@@ -150,7 +177,11 @@ def main():
         _live_unanswered_candidates.clear()
         st.rerun()
 
-    flagged, hours_by_thread, untriaged_count = load_dashboard_data()
+    resolver = _contact_resolver()
+    contacts_enabled = contact_name_controls(resolver)
+    flagged, hours_by_thread, untriaged_count = load_dashboard_data(
+        resolver if contacts_enabled else None
+    )
 
     if untriaged_count:
         st.info(

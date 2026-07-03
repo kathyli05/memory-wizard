@@ -36,6 +36,10 @@ FORBIDDEN_IMPORTS = {
     "imessage",
 }
 
+# Explicitly approved, fixed-path, no-shell bridge to the read-only native
+# Contacts helper. No other Python module may gain subprocess capability.
+CONTACTS_HELPER_WRAPPER = Path("contacts/macos_contacts.py")
+
 _IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_][\w]*)", re.MULTILINE)
 
 # Call-sites that reach execution without an import keyword match.
@@ -58,7 +62,9 @@ def test_no_send_or_exec_capability_in_source():
         rel = path.relative_to(REPO_ROOT)
 
         for match in _IMPORT_RE.finditer(text):
-            if match.group(1) in FORBIDDEN_IMPORTS:
+            if (match.group(1) in FORBIDDEN_IMPORTS
+                    and not (rel == CONTACTS_HELPER_WRAPPER
+                             and match.group(1) == "subprocess")):
                 violations.append(f"{rel}: imports {match.group(1)!r}")
 
         for token in FORBIDDEN_CALLS:
@@ -69,6 +75,28 @@ def test_no_send_or_exec_capability_in_source():
         "send/exec-capable code found — CLAUDE.md forbids the agent gaining "
         "the ability to send messages or run commands:\n  " + "\n  ".join(violations)
     )
+
+
+def test_contacts_helper_is_fixed_path_read_only_and_no_shell():
+    wrapper = (REPO_ROOT / CONTACTS_HELPER_WRAPPER).read_text()
+    helper = (REPO_ROOT / "native/contacts_helper/main.swift").read_text()
+
+    assert "HELPER_PATH = (" in wrapper
+    assert "shell=False" in wrapper
+    assert "[str(HELPER_PATH), command]" in wrapper
+    assert "CNSaveRequest" not in helper
+    assert "CNMutableContact" not in helper
+    assert ".execute(" not in helper
+
+
+def test_contacts_names_never_enter_triage_agent_or_storage():
+    triage_agent = (REPO_ROOT / "triage/triage_agent.py").read_text()
+    triage_store = (REPO_ROOT / "triage/store_triage_results.py").read_text()
+    profile_store = (REPO_ROOT / "contacts/store_profiles.py").read_text()
+
+    assert "MacOSContactResolver" not in triage_agent
+    assert "resolved_contact" not in triage_store
+    assert "resolved_contact" not in profile_store
 
 
 def test_source_db_paths_only_opened_read_only():

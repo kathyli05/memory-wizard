@@ -12,3 +12,5 @@ venv/
 *.egg-info/
 .env
 
+# Locally compiled, permission-scoped Contacts helper
+native/contacts_helper/.build/

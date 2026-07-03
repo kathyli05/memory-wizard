@@ -44,6 +44,8 @@ def find_unanswered_threads(
                 {
                     "thread_id": last["thread_id"],
                     "thread_name": last["thread_name"],
+                    "thread_display_name": last.get("thread_display_name"),
+                    "thread_identifier": last.get("thread_identifier"),
                     "last_message_sender": last["sender"],
                     "last_message_timestamp": last["timestamp"],
                     "hours_since_last_message": age.total_seconds() / 3600,
