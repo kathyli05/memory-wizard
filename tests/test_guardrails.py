@@ -79,7 +79,7 @@ def test_no_send_or_exec_capability_in_source():
 
 def test_contacts_helper_is_fixed_path_read_only_and_no_shell():
     wrapper = (REPO_ROOT / CONTACTS_HELPER_WRAPPER).read_text()
-    helper = (REPO_ROOT / "native/contacts_helper/main.swift").read_text()
+    helper = (REPO_ROOT / "native/contacts_helper/main.m").read_text()
 
     assert "HELPER_PATH = (" in wrapper
     assert "shell=False" in wrapper
