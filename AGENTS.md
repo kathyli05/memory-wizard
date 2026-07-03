@@ -72,6 +72,64 @@ proceeding anyway.
   staged prompt into an unrelated fix or feature mid-session. If something
   unrelated comes up, note it and finish the current slice first.
 
+## Dual purpose — personal product and interview portfolio
+
+This is a real tool for the user's personal use and a project they may discuss
+in interviews. Build for genuine usefulness first; do not add demo-only behavior,
+inflate metrics, or weaken privacy/safety constraints to make the project look
+more impressive. Portfolio value should come from sound engineering decisions
+and honest evidence that the system works.
+
+- Keep normal repository documentation professional and project-focused. Do not
+  mention interviews, hiring, resume framing, or what the user should say to an
+  interviewer unless the user explicitly requests that material in public docs.
+- Put interview-specific notes, talking points, tradeoff explanations, and
+  benchmark interpretation in `.local/interview-notes.md`, which must remain
+  Git-ignored. After a material design decision or evaluation result, add a
+  concise local note when it would help the user explain the work later.
+- Produce reproducible evidence: exact commands, test output, schemas, redacted
+  previews, versioned prompts, evaluation methodology, limitations, and cost.
+  Never manufacture or selectively present results.
+- Explain why a design was chosen, what alternatives were considered, and what
+  remains uncertain. Treat failures and ambiguous evaluation cases as useful
+  findings rather than hiding them.
+- Keep setup and routine operation low-friction for one person. Prefer safe
+  defaults, automatic local reports, clear `latest` artifacts, and a small number
+  of memorable commands without removing deliberate confirmation for paid or
+  destructive actions.
+- Never put private messages, names, contacts, raw provider responses, secrets,
+  or other personal data into portfolio artifacts. Synthetic examples and
+  derived aggregate metrics are the default evidence.
+
+## Local project journal — external memory for every request
+
+The user relies on this repository as external memory. Maintain an append-only
+local journal at `.local/PROJECT_JOURNAL.md`; it must remain Git-ignored. Every
+user request or meaningful follow-up must produce a journal entry, including
+requests that result only in advice, clarification, diagnosis, or no code change.
+
+For each request, record:
+
+- timestamp and a short title;
+- a concise paraphrase of what the user asked (not necessarily verbatim);
+- decisions made and why;
+- meaningful implementation or investigation steps;
+- files/artifacts changed or inspected;
+- errors, failed approaches, and how they were resolved;
+- verification evidence such as tests, previews, or evaluation metrics;
+- unresolved questions and the next recommended action.
+
+Update the journal near the end of the turn, after the outcome is known. If a
+task pauses for approval, log the proposed decision and mark it pending; append
+the approval or revision later rather than rewriting history. Do not silently
+erase or rewrite earlier entries—add a correction if an earlier conclusion
+changes. Mention the journal update briefly in the final response.
+
+“Every request” does not mean copying sensitive content. Never record secrets,
+raw Messages/Photos content, contact details, private request payloads, raw model
+responses, or raw provider error messages. Use a safe summary or error category,
+and link to an existing local artifact when detail already lives elsewhere.
+
 ## Tech stack reference
 
 - Data source: local `chat.db` copy (iMessage) via SQLite; `osxphotos` for
