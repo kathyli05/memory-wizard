@@ -179,7 +179,7 @@ def _partition_candidates(
     return to_triage, filtered, unchanged
 
 
-def _redacted_request(profile, thread_messages):
+def _redacted_request(profile, thread_messages, assessment_time):
     """Build the real request shape with every private string replaced."""
     redacted_profile = dict(profile)
     redacted_profile["thread_name"] = "[REDACTED THREAD]"
@@ -191,7 +191,7 @@ def _redacted_request(profile, thread_messages):
             redacted["sender"] = "[REDACTED SENDER]"
         redacted["text"] = f"[REDACTED readable message {index}]"
         redacted_messages.append(redacted)
-    return build_request(redacted_profile, redacted_messages)
+    return build_request(redacted_profile, redacted_messages, assessment_time)
 
 
 def _build_parser():
@@ -252,6 +252,7 @@ def main():
 
 
 def _run(chat_copy_path: Path, args):
+    assessment_time = datetime.now().astimezone()
     messages = parse_messages(chat_copy_path)
     candidates = find_unanswered_threads(
         messages, threshold_hours=args.threshold_hours, lookback_days=args.lookback_days
@@ -341,7 +342,9 @@ def _run(chat_copy_path: Path, args):
                 call_started_at = datetime.now().isoformat()
                 call_started = time.perf_counter()
                 try:
-                    result = run_triage(client, profile, thread_messages)
+                    result = run_triage(
+                        client, profile, thread_messages, assessment_time
+                    )
                 except Exception as exc:
                     failed += 1
                     record_call(args.dest, {
@@ -397,7 +400,9 @@ def _run(chat_copy_path: Path, args):
                 )
                 print()
             else:
-                request = _redacted_request(profile, thread_messages)
+                request = _redacted_request(
+                    profile, thread_messages, assessment_time
+                )
                 print(json.dumps(request, indent=2, default=_json_default))
                 print("\nredacted preview only — --call not passed; request not sent\n")
     finally:

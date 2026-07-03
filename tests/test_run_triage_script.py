@@ -169,7 +169,7 @@ def test_preview_preserves_request_shape_but_redacts_private_strings():
         _message(1, "Second private body", sender="+15551234567"),
     ]
 
-    request = _redacted_request(profile, messages)
+    request = _redacted_request(profile, messages, NOW)
     serialized = json.dumps(request)
 
     assert request["tool_choice"]["name"] == "emit_triage_assessment"
@@ -178,6 +178,9 @@ def test_preview_preserves_request_shape_but_redacts_private_strings():
     assert "next_action" in request["tools"][0]["input_schema"]["required"]
     assert "provide availability" in request["system"]
     assert "Use this urgency rubric consistently" in request["system"]
+    assert "Keep urgency, credibility, and safe action distinct" in request["system"]
+    assert "solely because the contact is new" in request["system"]
+    assert "<assessment_time>\\nLocal time: 2026-07-01 12:00" in serialized
     assert "Median response latency" not in serialized
     assert "[REDACTED THREAD]" in serialized
     assert "[REDACTED SENDER]" in serialized
@@ -277,8 +280,9 @@ def test_call_run_stores_partial_successes_and_enforces_retention(
     stored = []
     call_count = 0
 
-    def fake_run(client, profile, thread_messages):
+    def fake_run(client, profile, thread_messages, assessment_time):
         nonlocal call_count
+        assert assessment_time.tzinfo is not None
         call_count += 1
         if profile["thread_id"] == 2:
             raise RuntimeError("private provider error")

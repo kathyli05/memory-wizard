@@ -3,6 +3,7 @@
   "1": "run_triage.py",
   "2": "ephemeral_copy",
   "3": "test_contact_names.py",
+  "4": "Q: do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons",
   "5": "What You Must Do When Invoked",
   "6": "What You Must Do When Invoked",
   "7": "test_run_triage_script.py",
@@ -40,5 +41,7 @@
   "39": "main.m",
   "40": "__init__.py",
   "41": "__init__.py",
-  "42": "__init__.py"
+  "42": "__init__.py",
+  "43": "Q: Is the supplied synthetic triage evaluation preview legitimate?",
+  "44": "Q: Assess the attached 20-case paid synthetic triage evaluation"
 }

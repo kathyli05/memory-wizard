@@ -14,17 +14,21 @@ before spending money or touching real conversations.
    user has not answered within the configured time window.
 3. It filters obvious automated messages, such as one-time codes, and skips
    conversations that have not changed since their last assessment.
-4. For each remaining conversation, it builds a small contact behavior summary
-   and selects no more than the last five messages.
+4. For each remaining conversation, it records one local assessment timestamp,
+   builds a small contact behavior summary, and selects no more than the last
+   five messages.
 5. Preview mode replaces names, senders, and message bodies with placeholders.
    It shows the exact request structure but does not create an API client, spend
    tokens, or write call records.
 6. In call mode, each conversation is assessed independently. A failure for one
    conversation does not discard successful results for the others.
-7. Successful assessments are saved for the dashboard. The dashboard shows the
+7. Urgency, credibility, and safe action are assessed separately. A suspicious
+   time-sensitive message can remain urgent while being marked for review, with
+   independent verification recommended instead of a direct reply.
+8. Successful assessments are saved for the dashboard. The dashboard shows the
    urgency, whether a reminder may help, whether a person should review an
    ambiguous result, and a plain-English explanation.
-8. Explanation text is cleared after 14 days because it may paraphrase a private
+9. Explanation text is cleared after 14 days because it may paraphrase a private
    message. Longer-lived fields are limited to derived labels and operational
    counts.
 
@@ -33,7 +37,7 @@ automatically sends a reply, or deletes a photo.
 
 ## Why prompt versions and fingerprints both exist
 
-The **prompt version** is a readable label such as `triage-v2`. It is useful in
+The **prompt version** is a readable label such as `triage-v4`. It is useful in
 conversation, release notes, and dashboards.
 
 The **fingerprint** is a SHA-256 checksum calculated from the parts that define
@@ -44,10 +48,10 @@ the assessment contract:
 - the model name;
 - fixed request settings such as the output limit and required tool choice.
 
-Runtime data is deliberately excluded. Names, contact summaries, senders, and
-messages cannot affect the fingerprint. This means two runs using the same
-contract have the same fingerprint, while even a small contract change creates
-a different one.
+Runtime data is deliberately excluded. Assessment times, names, contact
+summaries, senders, and messages cannot affect the fingerprint. This means two
+runs using the same contract have the same fingerprint, while even a small
+contract change creates a different one.
 
 The model and prompt version are separate because changing the model is not the
 same experiment as changing the instructions. Each successful result records
@@ -100,8 +104,9 @@ messages, missing context, and text shaped like an instruction attack. Every
 case declares the expected urgency, reminder recommendation, review flag, and
 descriptive tags.
 
-The harness uses the same request builder and execution function as production.
-There is no duplicate prompt that could quietly drift out of sync.
+The harness uses the same request builder and execution function as production,
+passing each case's `as_of` value as the local assessment time. There is no
+duplicate prompt that could quietly drift out of sync.
 
 Its default mode is safe and free: it validates the cases, prints redacted
 request shapes, and saves a local JSON/Markdown validation report. A paid run
@@ -125,8 +130,10 @@ ambiguity or manipulation, and avoids inventing facts.
 
 Development cases can be inspected while improving the instructions. Holdout
 cases provide a small independent check and should not be used for case-by-case
-tuning. Otherwise the prompt may simply become good at the examples used to
-write it rather than improving more generally.
+tuning. The current historical holdout results have been inspected, so fresh
+holdout cases are required before another paid comparison. Otherwise the prompt
+may simply become good at the examples used to write it rather than improving
+more generally.
 
 ## Commands
 

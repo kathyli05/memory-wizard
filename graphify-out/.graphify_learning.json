@@ -1,0 +1,180 @@
+{
+  "generated_at": "2026-07-03T19:38:34.928341+00:00",
+  "nodes": {
+    "evals_readme_synthetic_triage_evaluations": {
+      "code_fingerprint": "2cba7a947c1202ab34d722a51b03e6ab2c7da784b5d3ad38901af03db7786efb",
+      "label": "Synthetic triage evaluations",
+      "last": "2026-07-03T19:20:53.160677+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:20:53.160677+00:00",
+          "outcome": "useful",
+          "q": "Is the supplied synthetic triage evaluation preview legitimate?"
+        }
+      ],
+      "score": 0.999716105,
+      "source_file": "evals/README.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "scripts_run_triage_eval": {
+      "code_fingerprint": "9f3c1a5bd0ef7ee65643609c0153630b46b23c2c5e779afdb0ac9db6e38a295f",
+      "label": "run_triage_eval.py",
+      "last": "2026-07-03T19:38:17.920339+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:38:17.920339+00:00",
+          "outcome": "useful",
+          "q": "Implement the approved triage time-context and scam-aware fix"
+        },
+        {
+          "date": "2026-07-03T19:25:12.176077+00:00",
+          "outcome": "useful",
+          "q": "Assess the attached 20-case paid synthetic triage evaluation"
+        },
+        {
+          "date": "2026-07-03T19:20:53.160677+00:00",
+          "outcome": "useful",
+          "q": "Is the supplied synthetic triage evaluation preview legitimate?"
+        }
+      ],
+      "score": 2.999496909,
+      "source_file": "scripts/run_triage_eval.py",
+      "status": "preferred",
+      "uses": 3
+    },
+    "scripts_run_triage_eval_metrics": {
+      "code_fingerprint": "9f3c1a5bd0ef7ee65643609c0153630b46b23c2c5e779afdb0ac9db6e38a295f",
+      "label": "metrics()",
+      "last": "2026-07-03T19:25:12.176077+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:25:12.176077+00:00",
+          "outcome": "useful",
+          "q": "Assess the attached 20-case paid synthetic triage evaluation"
+        }
+      ],
+      "score": 0.999785353,
+      "source_file": "scripts/run_triage_eval.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "scripts_run_triage_eval_write_report": {
+      "code_fingerprint": "9f3c1a5bd0ef7ee65643609c0153630b46b23c2c5e779afdb0ac9db6e38a295f",
+      "label": "write_report()",
+      "last": "2026-07-03T19:20:53.160677+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:20:53.160677+00:00",
+          "outcome": "useful",
+          "q": "Is the supplied synthetic triage evaluation preview legitimate?"
+        }
+      ],
+      "score": 0.999716105,
+      "source_file": "scripts/run_triage_eval.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests_test_run_triage_script_test_retriage_context_is_capped_at_last_five_messages": {
+      "code_fingerprint": "f6db2dfac89485184ba6a71fbd10a5538c960630752e91278756361e323a45c9",
+      "label": "test_retriage_context_is_capped_at_last_five_messages()",
+      "last": "2026-07-03T19:19:33.884802+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:19:33.884802+00:00",
+          "outcome": "useful",
+          "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
+        }
+      ],
+      "score": 0.999694911,
+      "source_file": "tests/test_run_triage_script.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "triage_triage_agent_build_request": {
+      "code_fingerprint": "11417eac0690de3aee4cd9bfc5c798ea970b024e60e2c285e95bd4745dd24162",
+      "label": "build_request()",
+      "last": "2026-07-03T19:38:17.920339+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:38:17.920339+00:00",
+          "outcome": "useful",
+          "q": "Implement the approved triage time-context and scam-aware fix"
+        },
+        {
+          "date": "2026-07-03T19:25:12.176077+00:00",
+          "outcome": "useful",
+          "q": "Assess the attached 20-case paid synthetic triage evaluation"
+        },
+        {
+          "date": "2026-07-03T19:19:33.884802+00:00",
+          "outcome": "useful",
+          "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
+        }
+      ],
+      "score": 2.999475716,
+      "source_file": "triage/triage_agent.py",
+      "status": "preferred",
+      "uses": 3
+    },
+    "triage_triage_agent_last_n_messages": {
+      "code_fingerprint": "11417eac0690de3aee4cd9bfc5c798ea970b024e60e2c285e95bd4745dd24162",
+      "label": "last_n_messages()",
+      "last": "2026-07-03T19:19:33.884802+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:19:33.884802+00:00",
+          "outcome": "useful",
+          "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
+        }
+      ],
+      "score": 0.999694911,
+      "source_file": "triage/triage_agent.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "triage_triage_agent_prompt_fingerprint": {
+      "code_fingerprint": "11417eac0690de3aee4cd9bfc5c798ea970b024e60e2c285e95bd4745dd24162",
+      "label": "prompt_fingerprint()",
+      "last": "2026-07-03T19:38:17.920339+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:38:17.920339+00:00",
+          "outcome": "useful",
+          "q": "Implement the approved triage time-context and scam-aware fix"
+        },
+        {
+          "date": "2026-07-03T19:25:12.176077+00:00",
+          "outcome": "useful",
+          "q": "Assess the attached 20-case paid synthetic triage evaluation"
+        },
+        {
+          "date": "2026-07-03T19:20:53.160677+00:00",
+          "outcome": "useful",
+          "q": "Is the supplied synthetic triage evaluation preview legitimate?"
+        }
+      ],
+      "score": 2.999496909,
+      "source_file": "triage/triage_agent.py",
+      "status": "preferred",
+      "uses": 3
+    },
+    "triage_triage_agent_run_triage": {
+      "code_fingerprint": "11417eac0690de3aee4cd9bfc5c798ea970b024e60e2c285e95bd4745dd24162",
+      "label": "run_triage()",
+      "last": "2026-07-03T19:38:17.920339+00:00",
+      "provenance": [
+        {
+          "date": "2026-07-03T19:38:17.920339+00:00",
+          "outcome": "useful",
+          "q": "Implement the approved triage time-context and scam-aware fix"
+        }
+      ],
+      "score": 0.999995452,
+      "source_file": "triage/triage_agent.py",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
+  "version": 1
+}

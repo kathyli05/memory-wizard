@@ -250,7 +250,9 @@ def main():
 
     if not args.call:
         for case in cases:
-            request = _redacted_request(case["profile"], case["request_messages"])
+            request = _redacted_request(
+                case["profile"], case["request_messages"], case["as_of"]
+            )
             print(json.dumps({"case_id": case["case_id"], "request": request}, default=str))
         report = {
             "created_at": datetime.now().isoformat(),
@@ -280,7 +282,9 @@ def main():
     totals = Counter()
     for case in cases:
         try:
-            result = run_triage(client, case["profile"], case["request_messages"])
+            result = run_triage(
+                client, case["profile"], case["request_messages"], case["as_of"]
+            )
             usage = result.pop("_usage")
             totals.update(usage)
             rows.append({

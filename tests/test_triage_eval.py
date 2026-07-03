@@ -15,6 +15,21 @@ def test_cases_validate_and_preserve_last_five_cap():
                run_triage_eval.DEFAULT_CASES.read_text().splitlines())
 
 
+def test_observed_payment_case_preserves_urgency_but_requires_verification():
+    cases = run_triage_eval.load_cases(run_triage_eval.DEFAULT_CASES)
+    payment = next(case for case in cases
+                   if case["case_id"] == "holdout-high-payment-019")
+
+    assert payment["split"] == "development"
+    assert payment["expected"] == {
+        "urgency": "high", "suggest_nudge": False, "needs_review": True,
+    }
+    request = run_triage_eval._redacted_request(
+        payment["profile"], payment["request_messages"], payment["as_of"]
+    )
+    assert "Local time: 2030-04-12 12:00" in request["messages"][0]["content"]
+
+
 def test_default_eval_is_redacted_zero_call_and_writes_safe_reports(
     monkeypatch, capsys, tmp_path
 ):
