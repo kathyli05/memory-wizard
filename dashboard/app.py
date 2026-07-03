@@ -59,7 +59,11 @@ from triage.store_triage_results import (
 CHAT_DB_SOURCE = Path(os.environ.get("CHAT_DB_SOURCE", str(REAL_CHAT_DB_SOURCE)))
 TRIAGE_DB_PATH = Path(os.environ.get("TRIAGE_DB_PATH", "./data/triage.db"))
 
-LIVE_CHECK_TTL_SECONDS = 60
+# Button clicks rerun the whole script; while this cache is warm a rerun
+# skips re-snapshotting chat.db, so clicks feel instant. 10 minutes of
+# staleness is fine for a weekly-cadence tool — the Refresh button still
+# forces an immediate re-check.
+LIVE_CHECK_TTL_SECONDS = 600
 
 # Urgency display metadata. Keys double as CSS class suffixes, so any
 # unexpected value from the DB is coerced to a known key before use.
@@ -282,12 +286,77 @@ div[class*="st-key-feedback_row"] button:hover {
   color: var(--mw-ink) !important;
 }
 
+/* Portaled surfaces — popover bodies, dropdown menus, and the calendar
+   render OUTSIDE .stApp (baseweb portals), so the font/ink rules above
+   don't reach them and Streamlit's default font + red accent leak
+   through. Re-apply the theme to those roots explicitly. */
+[data-baseweb="popover"], [data-baseweb="popover"] * ,
+[data-baseweb="menu"], [data-baseweb="menu"] *,
+[data-baseweb="calendar"], [data-baseweb="calendar"] * {
+  font-family: var(--mw-font) !important;
+}
 [data-testid="stPopoverBody"] {
   border-radius: 18px !important;
   border: 1px solid var(--mw-card-border) !important;
   background: var(--mw-card) !important;
   box-shadow: var(--mw-shadow-hover) !important;
 }
+[data-testid="stPopoverBody"] p,
+[data-testid="stPopoverBody"] label,
+[data-testid="stPopoverBody"] span {
+  color: var(--mw-ink);
+}
+/* selectbox / date input fields inside popovers */
+[data-baseweb="select"] > div,
+[data-testid="stDateInputField"],
+[data-baseweb="input"], [data-baseweb="base-input"] {
+  background: var(--mw-card) !important;
+  border-color: var(--mw-card-border) !important;
+  color: var(--mw-ink) !important;
+  border-radius: 12px !important;
+  font-family: var(--mw-font) !important;
+}
+[data-baseweb="select"] svg { fill: var(--mw-ink-soft); }
+/* dropdown option list */
+[data-baseweb="popover"] [role="listbox"] {
+  background: var(--mw-card) !important;
+  border: 1px solid var(--mw-card-border);
+  border-radius: 14px !important;
+}
+[role="option"] { background: var(--mw-card) !important; color: var(--mw-ink) !important; }
+[role="option"]:hover, [aria-selected="true"][role="option"] {
+  background: var(--mw-btn-hover-bg) !important;
+}
+/* calendar: replace default red accent with theme lavender */
+[data-baseweb="calendar"] {
+  background: var(--mw-card) !important;
+  color: var(--mw-ink) !important;
+  border-radius: 14px;
+}
+[data-baseweb="calendar"] div, [data-baseweb="calendar"] span {
+  color: var(--mw-ink);
+}
+/* baseweb paints the selected-day circle via a ::after pseudo-element and
+   the keyboard-highlight ring via ::before, both in Streamlit's default
+   red — repaint them in theme lavender */
+[data-baseweb="calendar"] [role="gridcell"][aria-label*="Selected"]::after {
+  background: #6d47e0 !important;
+}
+[data-baseweb="calendar"] [role="gridcell"][aria-label*="Selected"] {
+  color: #ffffff !important;
+}
+[data-baseweb="calendar"] [role="gridcell"]::before,
+[data-baseweb="calendar"] [role="gridcell"]::after {
+  border-color: #6d47e0 !important;
+}
+/* filler cells before/after the month otherwise render as dark blocks */
+[data-baseweb="calendar"] [role="gridcell"]:empty,
+[data-baseweb="calendar"] [role="gridcell"]:empty::before,
+[data-baseweb="calendar"] [role="gridcell"]:empty::after {
+  background: transparent !important;
+  border: none !important;
+}
+[data-baseweb="calendar"] button { color: var(--mw-ink) !important; }
 
 /* untriaged banner */
 .mw-banner {
@@ -455,40 +524,30 @@ def render_feedback_controls(result: dict):
         "model_urgency": result["urgency"],
     }
 
-    st.caption("Was this assessment useful?")
-    # Keyed so CSS can render these as quiet tertiary chips: feedback is
-    # optional meta-input and sits below Dismiss/Snooze in the hierarchy.
-    with st.container(horizontal=True, gap="small", key=f"feedback_row_{thread_id}"):
-        if st.button("Correct", key=f"feedback_correct_{thread_id}"):
-            record_feedback(
-                **common,
-                urgency_correct=True,
-                corrected_urgency=None,
-                reply_worthy=True,
-            )
-            st.rerun()
-        with st.popover("Wrong urgency"):
-            corrected = st.selectbox(
-                "Correct urgency",
-                ["low", "med", "high"],
-                key=f"feedback_urgency_{thread_id}",
-            )
-            if st.button("Save correction", key=f"feedback_save_{thread_id}"):
-                record_feedback(
-                    **common,
-                    urgency_correct=False,
-                    corrected_urgency=corrected,
-                    reply_worthy=True,
-                )
-                st.rerun()
+    def _saved(**kwargs):
+        record_feedback(**common, **kwargs)
+        # st.toast fires after the rerun via session_state, so the user
+        # gets an immediate acknowledgment that the click registered.
+        st.session_state["pending_toast"] = "Feedback logged ✨"
+        st.rerun()
+
+    # One quiet entry point instead of three always-visible buttons:
+    # feedback is rare (only when the model was egregiously wrong), so it
+    # shouldn't compete with the card actions. Keyed so CSS renders the
+    # trigger as a tertiary chip.
+    with st.popover("🔭 Rate assessment"):
+        st.caption("Optional — flag it when the triage got this one wrong.")
+        if st.button("Looks right", key=f"feedback_correct_{thread_id}"):
+            _saved(urgency_correct=True, corrected_urgency=None, reply_worthy=True)
         if st.button("Not reply-worthy", key=f"feedback_irrelevant_{thread_id}"):
-            record_feedback(
-                **common,
-                urgency_correct=None,
-                corrected_urgency=None,
-                reply_worthy=False,
-            )
-            st.rerun()
+            _saved(urgency_correct=None, corrected_urgency=None, reply_worthy=False)
+        corrected = st.selectbox(
+            "Actual urgency",
+            ["low", "med", "high"],
+            key=f"feedback_urgency_{thread_id}",
+        )
+        if st.button("Save urgency correction", key=f"feedback_save_{thread_id}"):
+            _saved(urgency_correct=False, corrected_urgency=corrected, reply_worthy=True)
 
 
 def render_card(result: dict, hours_by_thread: dict):
@@ -517,17 +576,18 @@ def render_card(result: dict, hours_by_thread: dict):
         else:
             st.caption("🛰️ Reasoning no longer available — past the 14-day retention window.")
         if result["suggest_nudge"]:
-            st.caption("💫 Suggested: remind me to reply")
+            st.caption("💫 Model suggestion: worth a reply — snooze to get re-reminded later")
         if result["needs_review"]:
             st.caption("🔭 Needs review: the assessment was uncertain")
 
-        render_feedback_controls(result)
-
-        with st.container(horizontal=True, gap="small", horizontal_alignment="right"):
-            if st.button("Dismiss", key=f"dismiss_{thread_id}", type="primary"):
-                dismiss_result(TRIAGE_DB_PATH, thread_id)
-                st.rerun()
-            render_snooze_controls(thread_id)
+        with st.container(horizontal=True, vertical_alignment="center"):
+            with st.container(horizontal=True, key=f"feedback_row_{thread_id}"):
+                render_feedback_controls(result)
+            with st.container(horizontal=True, gap="small", horizontal_alignment="right"):
+                if st.button("Dismiss", key=f"dismiss_{thread_id}", type="primary"):
+                    dismiss_result(TRIAGE_DB_PATH, thread_id)
+                    st.rerun()
+                render_snooze_controls(thread_id)
 
 
 def main():
@@ -535,9 +595,14 @@ def main():
     st.markdown(THEME_CSS, unsafe_allow_html=True)
     st.markdown(HERO_HTML, unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh"):
-        _live_unanswered_candidates.clear()
-        st.rerun()
+    pending_toast = st.session_state.pop("pending_toast", None)
+    if pending_toast:
+        st.toast(pending_toast)
+
+    with st.container(horizontal=True, horizontal_alignment="center"):
+        if st.button("🔄 Refresh"):
+            _live_unanswered_candidates.clear()
+            st.rerun()
 
     resolver = _contact_resolver()
     contacts_enabled = contact_name_controls(resolver)

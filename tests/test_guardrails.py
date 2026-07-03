@@ -131,10 +131,14 @@ def test_dashboard_never_renders_untrusted_fields_as_markdown():
 
 def test_dashboard_feedback_is_separate_from_dismiss_and_nudge_wording_is_clear():
     app_src = (REPO_ROOT / "dashboard" / "app.py").read_text()
-    assert 'st.button("Correct"' in app_src
-    assert 'st.popover("Wrong urgency")' in app_src
+    # Feedback lives in its own popover, separate from the Dismiss action,
+    # so rating the model can't be confused with acting on the thread.
+    assert 'st.popover("🔭 Rate assessment")' in app_src
+    assert 'st.button("Looks right"' in app_src
     assert 'st.button("Not reply-worthy"' in app_src
-    assert "remind me to reply" in app_src
+    # The nudge suggestion must read as a note to the user (reply/snooze),
+    # never as the system offering to send anything on their behalf.
+    assert "worth a reply" in app_src
     assert "consider sending a nudge" not in app_src
 
 
