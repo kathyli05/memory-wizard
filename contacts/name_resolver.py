@@ -11,6 +11,9 @@ from typing import Iterable, Protocol
 import phonenumbers
 
 UNKNOWN_CONTACT = "Unknown contact"
+# Unnamed group chats show at most this many participant names; the rest
+# collapse into "& N others" so huge chats stay scannable.
+GROUP_NAME_LIMIT = 3
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+$")
 
 
@@ -109,26 +112,60 @@ def choose_unambiguous_name(
     return _display_name(next(iter(matches.values())))
 
 
+def _participants_label(participants: tuple[str, ...], resolved: dict[str, str]) -> str:
+    """Human-readable roster for an unnamed group chat.
+
+    Each participant shows their saved contact name when resolvable,
+    otherwise their raw handle (same fallback 1:1 threads already use).
+    """
+    names = [resolved.get(participant) or participant for participant in participants]
+    if len(names) == 1:
+        return names[0]
+    if len(names) <= GROUP_NAME_LIMIT:
+        return ", ".join(names[:-1]) + " & " + names[-1]
+    hidden = len(names) - GROUP_NAME_LIMIT
+    shown = ", ".join(names[:GROUP_NAME_LIMIT])
+    return f"{shown} & {hidden} other{'s' if hidden > 1 else ''}"
+
+
 def resolved_thread_names(
     threads: Iterable[dict], resolver: ContactResolver
 ) -> dict[int, str]:
-    """Apply the display-name -> Contacts -> identifier -> unknown order."""
+    """Apply the display-name -> Contacts -> participants -> identifier ->
+    unknown order. Group chats without a user-set name have a synthetic
+    identifier ("chatNNN..."), so the participant roster is what makes
+    them readable."""
     thread_list = list(threads)
-    identifiers = {
-        thread.get("thread_identifier")
-        for thread in thread_list
-        if not (thread.get("thread_display_name") or "").strip()
-        and (thread.get("thread_identifier") or "").strip()
-    }
-    resolved = resolver.resolve(identifier for identifier in identifiers if identifier)
+    identifiers = set()
+    for thread in thread_list:
+        if (thread.get("thread_display_name") or "").strip():
+            continue
+        identifier = (thread.get("thread_identifier") or "").strip()
+        if identifier:
+            identifiers.add(identifier)
+        for participant in thread.get("thread_participants") or ():
+            if (participant or "").strip():
+                identifiers.add(participant.strip())
+    resolved = resolver.resolve(identifiers)
 
     names = {}
     for thread in thread_list:
         display_name = (thread.get("thread_display_name") or "").strip()
         identifier = (thread.get("thread_identifier") or "").strip()
+        participants = tuple(
+            participant.strip()
+            for participant in (thread.get("thread_participants") or ())
+            if (participant or "").strip()
+        )
+        participants_label = (
+            _participants_label(participants, resolved)
+            if not display_name and participants
+            else ""
+        )
         names[thread["thread_id"]] = (
             display_name
             or resolved.get(identifier)
+            or participants_label
             or identifier
             or UNKNOWN_CONTACT
         )

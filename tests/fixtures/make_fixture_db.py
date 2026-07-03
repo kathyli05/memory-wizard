@@ -59,6 +59,7 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
                 is_from_me INTEGER
             );
             CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+            CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
             """
         )
 
@@ -83,6 +84,15 @@ def build_fixture_db(path: Path = DEFAULT_FIXTURE_PATH) -> Path:
                 (5, "+15559998888", None),
                 (6, "782929", None),
             ],
+        )
+
+        # Thread participants (excluding me), mirroring real chat.db where
+        # 1:1 chats have one row and group chats one per member. Chat 5 has
+        # no row on purpose: its handle is absent from the handle table, so
+        # parsing must tolerate a thread with no resolvable participants.
+        conn.executemany(
+            "INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)",
+            [(1, 1), (2, 1), (2, 2), (3, 3), (4, 4), (6, 6)],
         )
 
         # (rowid, text, handle_id, is_from_me, datetime)

@@ -1,16 +1,16 @@
 # Graph Report - memory-wizard  (2026-07-03)
 
 ## Corpus Check
-- 64 files · ~44,400 words
+- 67 files · ~45,267 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 485 nodes · 843 edges · 42 communities (32 shown, 10 thin omitted)
+- 502 nodes · 857 edges · 45 communities (35 shown, 10 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 5 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `61acf136`
+- Built from commit: `8fed256d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,6 +19,7 @@
 - [[_COMMUNITY_run_triage.py|run_triage.py]]
 - [[_COMMUNITY_ephemeral_copy|ephemeral_copy]]
 - [[_COMMUNITY_test_contact_names.py|test_contact_names.py]]
+- [[_COMMUNITY_Q do you think it would be better to do this for the last 10 messages is 5 too little what are the pros and cons|Q: do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons]]
 - [[_COMMUNITY_What You Must Do When Invoked|What You Must Do When Invoked]]
 - [[_COMMUNITY_What You Must Do When Invoked|What You Must Do When Invoked]]
 - [[_COMMUNITY_test_run_triage_script.py|test_run_triage_script.py]]
@@ -50,6 +51,8 @@
 - [[_COMMUNITY_extraction-spec|extraction-spec.md]]
 - [[_COMMUNITY_build.sh|build.sh]]
 - [[_COMMUNITY_README|README.md]]
+- [[_COMMUNITY_Q Is the supplied synthetic triage evaluation preview legitimate|Q: Is the supplied synthetic triage evaluation preview legitimate?]]
+- [[_COMMUNITY_Q Assess the attached 20-case paid synthetic triage evaluation|Q: Assess the attached 20-case paid synthetic triage evaluation]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `_run()` - 26 edges
@@ -64,10 +67,10 @@
 10. `enforce_retention()` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_zero_candidate_call_run_records_zero_attempt_summary()` --calls--> `_run()`  [EXTRACTED]
-  tests/test_run_triage_script.py → scripts/run_triage.py
+- `load_cases()` --calls--> `compute_all_profiles()`  [EXTRACTED]
+  scripts/run_triage_eval.py → contacts/build_profiles.py
 - `_run()` --calls--> `compute_all_profiles()`  [EXTRACTED]
-  scripts/build_contact_profiles.py → contacts/build_profiles.py
+  scripts/run_triage.py → contacts/build_profiles.py
 - `_contact_resolver()` --calls--> `MacOSContactResolver`  [EXTRACTED]
   dashboard/app.py → contacts/macos_contacts.py
 - `FakeResolver` --uses--> `MacOSContactResolver`  [INFERRED]
@@ -78,23 +81,27 @@
 ## Import Cycles
 - None detected.
 
-## Communities (42 total, 10 thin omitted)
+## Communities (45 total, 10 thin omitted)
 
 ### Community 0 - "app.py"
 Cohesion: 0.09
-Nodes (54): contact_name_controls(), _contact_resolver(), _escape(), _format_hours(), load_dashboard_data(), main(), Streamlit dashboard for the Messages triage channel.  Read/action-only: this app, HTML-escape untrusted text for embedding in our static markup.      Escaping cov (+46 more)
+Nodes (56): contact_name_controls(), _contact_resolver(), _escape(), _format_hours(), _live_unanswered_candidates(), load_dashboard_data(), main(), Streamlit dashboard for the Messages triage channel.  Read/action-only: this app (+48 more)
 
 ### Community 1 - "run_triage.py"
-Cohesion: 0.09
-Nodes (39): compute_all_profiles(), Exception, _create_anthropic_client(), _empty_usage(), load_cases(), main(), _markdown_cell(), _markdown_report() (+31 more)
+Cohesion: 0.08
+Nodes (31): Exception, _create_anthropic_client(), load_cases(), main(), _markdown_cell(), _markdown_report(), metrics(), _percent() (+23 more)
 
 ### Community 2 - "ephemeral_copy"
-Cohesion: 0.06
-Nodes (58): _live_unanswered_candidates(), Snapshot chat.db and detect unanswered threads. Cached so widget     clicks (whi, copy_chat_db(), ephemeral_copy(), Path, Read-only snapshot of the macOS Messages database.  Never opens the source for w, Delete leftover ephemeral copies (base's stem + unique suffix) older     than ma, Copy chat.db to a unique path derived from dest, yield the path, then     delete (+50 more)
+Cohesion: 0.08
+Nodes (49): copy_chat_db(), ephemeral_copy(), Path, Read-only snapshot of the macOS Messages database.  Never opens the source for w, Delete leftover ephemeral copies (base's stem + unique suffix) older     than ma, Copy chat.db to a unique path derived from dest, yield the path, then     delete, sweep_stale_copies(), _unique_copy_path() (+41 more)
 
 ### Community 3 - "test_contact_names.py"
 Cohesion: 0.12
 Nodes (26): AccessCommand, MacOSContactResolver, Permission-aware wrapper around the fixed local Contacts helper.  The helper is, choose_unambiguous_name(), ContactRecord, ContactResolver, default_phone_region(), _display_name() (+18 more)
+
+### Community 4 - "Q: do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons, Source Nodes
 
 ### Community 5 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -105,12 +112,12 @@ Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 7 - "test_run_triage_script.py"
-Cohesion: 0.19
-Nodes (24): _apply_max_calls(), _build_parser(), main(), _partition_candidates(), _positive_int(), Return (to_triage, filtered, unchanged) for the selected triage mode., Apply the same deterministic cap to previews and real calls., _candidate() (+16 more)
+Cohesion: 0.14
+Nodes (34): _apply_max_calls(), _build_parser(), _empty_usage(), _json_default(), main(), _partition_candidates(), _positive_int(), Path (+26 more)
 
 ### Community 8 - "build_profiles.py"
-Cohesion: 0.17
-Nodes (20): compute_profile(), _initiation_stats(), is_placeholder_reply(), datetime, Compute per-thread contact profiles from parsed messages.  Pure functions — take, Count conversations (gap > CONVERSATION_GAP_HOURS starts a new one) and     the, True for a deferral that promises a later substantive response., thread_messages must be one thread's messages, sorted by timestamp ascending. (+12 more)
+Cohesion: 0.14
+Nodes (25): compute_all_profiles(), compute_profile(), _initiation_stats(), is_placeholder_reply(), datetime, Compute per-thread contact profiles from parsed messages.  Pure functions — take, Count conversations (gap > CONVERSATION_GAP_HOURS starts a new one) and     the, True for a deferral that promises a later substantive response. (+17 more)
 
 ### Community 9 - "test_prefilter.py"
 Cohesion: 0.19
@@ -180,25 +187,40 @@ Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify refer
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
+### Community 43 - "Q: Is the supplied synthetic triage evaluation preview legitimate?"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: Is the supplied synthetic triage evaluation preview legitimate?, Source Nodes
+
+### Community 44 - "Q: Assess the attached 20-case paid synthetic triage evaluation"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: Assess the attached 20-case paid synthetic triage evaluation, Source Nodes
+
 ## Knowledge Gaps
-- **127 isolated node(s):** `build.sh script`, `Usage`, `What graphify is for`, `Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)`, `Step 1 - Ensure graphify is installed` (+122 more)
+- **136 isolated node(s):** `build.sh script`, `Usage`, `What graphify is for`, `Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)`, `Step 1 - Ensure graphify is installed` (+131 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+
+## Work-memory lessons
+
+**Preferred sources** — corroborated by past sessions; start here.
+- `run_triage_eval.py` (2× useful, score=1.99989014) _(code changed — re-verify)_
+- `prompt_fingerprint()` (2× useful, score=1.99989014) _(code changed — re-verify)_
+- `build_request()` (2× useful, score=1.999868942) _(code changed — re-verify)_
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `parse_messages()` connect `ephemeral_copy` to `app.py`, `run_triage.py`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
-- **Why does `ephemeral_copy()` connect `ephemeral_copy` to `app.py`, `run_triage.py`, `test_run_triage_script.py`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Why does `parse_messages()` connect `ephemeral_copy` to `app.py`, `build_profiles.py`, `test_run_triage_script.py`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+- **Why does `ephemeral_copy()` connect `ephemeral_copy` to `app.py`, `build_profiles.py`, `test_run_triage_script.py`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Why does `MacOSContactResolver` connect `test_contact_names.py` to `app.py`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.024) - this node is a cross-community bridge._
 - **What connects `Compute per-thread contact profiles from parsed messages.  Pure functions — take`, `True for a deferral that promises a later substantive response.`, `thread_messages must be one thread's messages, sorted by timestamp ascending.` to the rest of the system?**
-  _187 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _196 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.09022556390977443 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08591466978375219 - nodes in this community are weakly interconnected._
 - **Should `run_triage.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08603145235892692 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08367071524966262 - nodes in this community are weakly interconnected._
 - **Should `ephemeral_copy` be split into smaller, more focused modules?**
-  _Cohesion score 0.06409130816505706 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07644110275689223 - nodes in this community are weakly interconnected._

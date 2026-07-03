@@ -44,7 +44,7 @@ def attributed_body(text: str) -> bytes:
     )
 
 
-def _build_db(path, chats, messages):
+def _build_db(path, chats, messages, handles=(), participants=()):
     conn = sqlite3.connect(path)
     try:
         conn.executescript(
@@ -64,6 +64,7 @@ def _build_db(path, chats, messages):
                 is_from_me INTEGER
             );
             CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+            CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
             """
         )
         conn.executemany(
@@ -79,6 +80,13 @@ def _build_db(path, chats, messages):
         conn.executemany(
             "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)",
             [(chat_id, rowid) for rowid, chat_id, _, _ in messages],
+        )
+        conn.executemany(
+            "INSERT INTO handle (ROWID, id) VALUES (?, ?)", handles
+        )
+        conn.executemany(
+            "INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)",
+            participants,
         )
         conn.commit()
     finally:
@@ -167,6 +175,23 @@ def test_thread_name_fallbacks_never_return_blank(tmp_path):
         None,
         None,
     ]
+
+
+def test_thread_participants_are_attached_per_thread(tmp_path):
+    path = tmp_path / "messages.db"
+    _build_db(
+        path,
+        [(1, "chat123456789", None), (2, "+15551110000", None), (3, "chat987", None)],
+        [(1, 1, "group hello", None), (2, 2, "direct hello", None), (3, 3, "orphan", None)],
+        handles=[(1, "+15551110000"), (2, "+15552220000"), (3, "alex@example.com")],
+        participants=[(1, 2), (1, 3), (1, 1), (2, 1)],
+    )
+
+    by_thread = {m["thread_id"]: m["thread_participants"] for m in parse_messages(path)}
+
+    assert by_thread[1] == ("+15551110000", "+15552220000", "alex@example.com")
+    assert by_thread[2] == ("+15551110000",)
+    assert by_thread[3] == ()  # no chat_handle_join rows -> empty, not an error
 
 
 def test_timestamp_fixture_remains_a_datetime(tmp_path):
