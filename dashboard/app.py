@@ -426,8 +426,7 @@ def render_feedback_controls(result: dict):
     }
 
     st.caption("Was this assessment useful?")
-    correct_col, wrong_col, irrelevant_col = st.columns(3)
-    with correct_col:
+    with st.container(horizontal=True, gap="small"):
         if st.button("Correct", key=f"feedback_correct_{thread_id}"):
             record_feedback(
                 **common,
@@ -436,7 +435,6 @@ def render_feedback_controls(result: dict):
                 reply_worthy=True,
             )
             st.rerun()
-    with wrong_col:
         with st.popover("Wrong urgency"):
             corrected = st.selectbox(
                 "Correct urgency",
@@ -451,7 +449,6 @@ def render_feedback_controls(result: dict):
                     reply_worthy=True,
                 )
                 st.rerun()
-    with irrelevant_col:
         if st.button("Not reply-worthy", key=f"feedback_irrelevant_{thread_id}"):
             record_feedback(
                 **common,
@@ -494,12 +491,10 @@ def render_card(result: dict, hours_by_thread: dict):
 
         render_feedback_controls(result)
 
-        col1, col2 = st.columns([1, 1])
-        with col1:
+        with st.container(horizontal=True, gap="small", horizontal_alignment="right"):
             if st.button("Dismiss", key=f"dismiss_{thread_id}"):
                 dismiss_result(TRIAGE_DB_PATH, thread_id)
                 st.rerun()
-        with col2:
             render_snooze_controls(thread_id)
 
 
