@@ -11,6 +11,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ingestion.decode_attributed_body import decode_attributed_body
+
 APPLE_EPOCH = datetime(2001, 1, 1)
 
 # chat.db stored `date` in seconds pre-High Sierra, nanoseconds from
@@ -55,7 +57,7 @@ def parse_messages(db_path: Path) -> list[dict]:
         if row["text"] is not None:
             text = row["text"]
         elif row["attributed_body"] is not None:
-            text = "[unsupported: attributedBody]"
+            text = decode_attributed_body(row["attributed_body"]) or "[unsupported: attributedBody]"
         else:
             text = ""
 
