@@ -102,6 +102,79 @@ def test_named_group_chat_wins_without_contact_lookup():
     assert resolver.requested == set()
 
 
+def test_unnamed_group_chat_shows_participant_names():
+    resolver = FakeResolver({
+        "+14155550101": "Priya",
+        "+14155550102": "Sam",
+        "+14155550103": "Tom",
+    })
+    threads = [{
+        "thread_id": 1,
+        "thread_display_name": None,
+        "thread_identifier": "chat346155730662940768",
+        "thread_participants": ("+14155550101", "+14155550102", "+14155550103"),
+    }]
+    assert resolved_thread_names(threads, resolver) == {1: "Priya, Sam & Tom"}
+
+
+def test_unnamed_group_chat_caps_names_and_counts_the_rest():
+    resolver = FakeResolver({
+        "+14155550101": "Priya",
+        "+14155550102": "Sam",
+        "+14155550103": "Tom",
+        "+14155550104": "Uma",
+        "+14155550105": "Vic",
+    })
+    threads = [{
+        "thread_id": 1,
+        "thread_display_name": None,
+        "thread_identifier": "chat346155730662940768",
+        "thread_participants": (
+            "+14155550101", "+14155550102", "+14155550103",
+            "+14155550104", "+14155550105",
+        ),
+    }]
+    assert resolved_thread_names(threads, resolver) == {
+        1: "Priya, Sam, Tom & 2 others"
+    }
+
+
+def test_unnamed_group_chat_unresolved_participants_fall_back_to_handles():
+    resolver = FakeResolver({"+14155550101": "Priya"})
+    threads = [{
+        "thread_id": 1,
+        "thread_display_name": None,
+        "thread_identifier": "chat346155730662940768",
+        "thread_participants": ("+14155550101", "+14155550199"),
+    }]
+    assert resolved_thread_names(threads, resolver) == {1: "Priya & +14155550199"}
+
+
+def test_unnamed_group_chat_without_participants_still_shows_identifier():
+    resolver = FakeResolver({})
+    threads = [{
+        "thread_id": 1,
+        "thread_display_name": None,
+        "thread_identifier": "chat346155730662940768",
+        "thread_participants": (),
+    }]
+    assert resolved_thread_names(threads, resolver) == {
+        1: "chat346155730662940768"
+    }
+
+
+def test_named_group_chat_never_requests_participant_lookups():
+    resolver = FakeResolver({"+14155550101": "Priya"})
+    threads = [{
+        "thread_id": 1,
+        "thread_display_name": "Weekend Plans",
+        "thread_identifier": "chat346155730662940768",
+        "thread_participants": ("+14155550101", "+14155550102"),
+    }]
+    assert resolved_thread_names(threads, resolver) == {1: "Weekend Plans"}
+    assert resolver.requested == set()
+
+
 def test_blank_and_null_identifiers_use_unknown_contact():
     resolver = FakeResolver({})
     threads = [

@@ -5,6 +5,7 @@ Schema reference (real chat.db, macOS):
   handle             ROWID, id                  (sender phone/email)
   chat               ROWID, chat_identifier, display_name
   chat_message_join  chat_id, message_id        (links messages to threads)
+  chat_handle_join   chat_id, handle_id         (thread participants, excl. me)
 """
 
 import sqlite3
@@ -50,6 +51,19 @@ JOIN chat_message_join ON chat_message_join.message_id = message.ROWID
 JOIN chat ON chat.ROWID = chat_message_join.chat_id
 LEFT JOIN handle ON handle.ROWID = message.handle_id
 ORDER BY chat.ROWID, message.date ASC
+"""
+
+# Participant handles per thread. Group chats have a synthetic
+# chat_identifier ("chatNNN...") that means nothing to a human; the
+# participant list is what lets the UI name those threads.
+_PARTICIPANTS_QUERY = """
+SELECT
+    chat_handle_join.chat_id AS thread_id,
+    NULLIF(TRIM(handle.id, char(9) || char(10) || char(11) ||
+                char(12) || char(13) || ' '), '') AS participant
+FROM chat_handle_join
+JOIN handle ON handle.ROWID = chat_handle_join.handle_id
+ORDER BY chat_handle_join.chat_id, handle.id
 """
 
 
@@ -100,8 +114,16 @@ def parse_messages(db_path: Path) -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(_QUERY).fetchall()
+        participant_rows = conn.execute(_PARTICIPANTS_QUERY).fetchall()
     finally:
         conn.close()
+
+    participants_by_thread: dict[int, tuple[str, ...]] = {}
+    for row in participant_rows:
+        if row["participant"] is None:
+            continue
+        existing = participants_by_thread.get(row["thread_id"], ())
+        participants_by_thread[row["thread_id"]] = existing + (row["participant"],)
 
     messages = []
     for row in rows:
@@ -122,6 +144,7 @@ def parse_messages(db_path: Path) -> list[dict]:
                 "thread_name": row["thread_name"],
                 "thread_display_name": row["thread_display_name"],
                 "thread_identifier": row["thread_identifier"],
+                "thread_participants": participants_by_thread.get(row["thread_id"], ()),
                 "sender": sender,
                 "text": text,
                 "timestamp": _apple_date_to_datetime(row["date"]),
