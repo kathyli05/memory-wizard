@@ -56,20 +56,36 @@ _IMPERATIVE_OVERRIDE_PATTERNS = [
 ]
 
 
-def is_likely_automated(sender: str, text: str) -> bool:
-    """True if this message is an obvious automated notification that
-    doesn't need triage (an OTP code, a shortcode ping, a marketing blast
-    with an opt-out footer) and False otherwise — including whenever the
-    text carries a genuine imperative ask. Opt-out footers don't count as
-    imperative asks: they're stripped before the override check."""
+def automated_filter_reason(sender: str, text: str) -> str | None:
+    """Return a privacy-safe filter category, or None when triage should run.
+
+    The returned labels describe only which deterministic rule matched; they
+    never contain sender or message content.
+    """
     text_without_footer = _OPT_OUT_FOOTER.sub(" ", text)
     if any(p.search(text_without_footer) for p in _IMPERATIVE_OVERRIDE_PATTERNS):
-        return False
-
-    if _SHORTCODE_SENDER.match(sender or ""):
-        return True
+        return None
 
     if _OPT_OUT_FOOTER.search(text):
-        return True
+        return (
+            "contains an unsubscribe/opt-out footer, which is a strong "
+            "automated-marketing signal"
+        )
 
-    return any(p.search(text) for p in _AUTOMATED_TEXT_PATTERNS)
+    if any(p.search(text) for p in _AUTOMATED_TEXT_PATTERNS):
+        return (
+            "matches a verification or one-time-code pattern and contains "
+            "no genuine reply request"
+        )
+
+    if _SHORTCODE_SENDER.match(sender or ""):
+        return (
+            "comes from a 4–6 digit shortcode and contains no genuine reply request"
+        )
+
+    return None
+
+
+def is_likely_automated(sender: str, text: str) -> bool:
+    """True when a message matches a deterministic automated filter rule."""
+    return automated_filter_reason(sender, text) is not None

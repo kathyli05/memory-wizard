@@ -44,7 +44,7 @@ behalf (what's urgent, what's worth keeping) without being either useless
 2. Contact profiles: per-thread median response latency, message frequency
    (90 days), initiation ratio — stored as derived signals only
 3. Unanswered thread detection: deterministic, no AI — last message
-   is_from_me=0 and older than configurable threshold (default 24h)
+   is_from_me=0 and older than configurable threshold (default 0h)
 4. Triage agent: Claude API call per candidate thread, sending contact
    profile + last 5 messages only. Structured output: urgency (low/med/high),
    reasoning, suggest_nudge (bool). Model: claude-sonnet-4-6

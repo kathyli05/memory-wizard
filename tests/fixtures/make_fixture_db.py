@@ -14,12 +14,11 @@ Threads 3, 4, and 5 exist to exercise triage.detect_unanswered: their last
 message is timed relative to build time (not a fixed 2026 date) so the
 "is this older than the threshold" / "is this within the lookback window"
 checks are correct whenever the fixture is built. Thread 3 ends with an
-incoming message ~3 days old (a triage candidate under the 24h default);
-thread 4 ends with one ~2 hours old (not yet a candidate under the
-default, but becomes one under a shorter threshold — useful for testing
-the boundary); thread 5 ends with one ~200 days old (past the 24h
-threshold but outside the default 150-day lookback window — excluded by
-default, included when the window is disabled or widened).
+incoming message ~3 days old; thread 4 ends with one ~2 hours old. Both are
+candidates under the 0h default, while an explicit longer threshold remains
+useful for testing the boundary. Thread 5 ends with one ~200 days old (past
+any practical threshold but outside the default 150-day lookback window —
+excluded by default, included when the window is disabled or widened).
 
 Thread 6 exists to exercise triage.prefilter: an unanswered OTP-style
 notification from a 6-digit shortcode sender, which should be flagged as

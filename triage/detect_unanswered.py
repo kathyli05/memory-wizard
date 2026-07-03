@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-DEFAULT_THRESHOLD_HOURS = 24
+DEFAULT_THRESHOLD_HOURS = 0
 DEFAULT_LOOKBACK_DAYS = 150
 
 

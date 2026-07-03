@@ -3,7 +3,8 @@
 Usage:
     python scripts/run_triage.py [--source PATH] [--threshold-hours N]
                                   [--lookback-days N] [--dest PATH]
-                                  [--retriage-one] [--call] [--keep-copy]
+                                  [--retriage-one | --retriage-all]
+                                  [--confirm-retriage-all] [--call] [--keep-copy]
 
 Copies chat.db read-only, uses it, then deletes the copy — no raw message
 data lingers on disk after this script exits. Pass --keep-copy to inspect
@@ -27,6 +28,10 @@ With --call: results are collected, written to --dest (default
 non-automated candidate and bypasses the unchanged-result dedup for that one
 thread only. It therefore previews at most one request and, with --call, makes
 at most one API call and replaces only that thread's stored triage result.
+
+--retriage-all applies the same eligibility rules to every previously triaged
+candidate in the configured lookback window. Calling the API in this mode also
+requires --confirm-retriage-all.
 """
 
 import argparse
@@ -50,7 +55,7 @@ from triage.detect_unanswered import (
     DEFAULT_THRESHOLD_HOURS,
     find_unanswered_threads,
 )
-from triage.prefilter import is_likely_automated
+from triage.prefilter import automated_filter_reason
 from triage.store_triage_results import (
     RETENTION_DAYS,
     enforce_retention,
@@ -68,8 +73,15 @@ def _json_default(obj):
     raise TypeError(f"not JSON serializable: {obj!r}")
 
 
-def _partition_candidates(messages, candidates, last_triaged, *, retriage_one=False):
-    """Return (to_triage, filtered, unchanged) with a one-call retriage cap."""
+def _partition_candidates(
+    messages,
+    candidates,
+    last_triaged,
+    *,
+    retriage_one=False,
+    retriage_all=False,
+):
+    """Return (to_triage, filtered, unchanged) for the selected triage mode."""
     to_triage = []
     filtered = []
     unchanged = []
@@ -80,22 +92,31 @@ def _partition_candidates(messages, candidates, last_triaged, *, retriage_one=Fa
         last_message = thread_messages[-1]
         previously_triaged_at = last_triaged.get(thread_id)
 
-        if retriage_one:
+        if retriage_one or retriage_all:
             if previously_triaged_at is None:
                 continue
-            if is_likely_automated(last_message["sender"], last_message["text"]):
-                filtered.append((candidate, last_message))
+            filter_reason = automated_filter_reason(
+                last_message["sender"], last_message["text"]
+            )
+            if filter_reason:
+                filtered.append((candidate, filter_reason))
                 continue
             to_triage.append((candidate, thread_messages))
-            break
+            if retriage_one:
+                break
+            continue
 
         if (previously_triaged_at is not None
                 and candidate["last_message_timestamp"].isoformat()
                 <= previously_triaged_at):
             unchanged.append(candidate)
-        elif is_likely_automated(last_message["sender"], last_message["text"]):
-            filtered.append((candidate, last_message))
         else:
+            filter_reason = automated_filter_reason(
+                last_message["sender"], last_message["text"]
+            )
+            if filter_reason:
+                filtered.append((candidate, filter_reason))
+                continue
             to_triage.append((candidate, thread_messages))
 
     return to_triage, filtered, unchanged
@@ -116,7 +137,7 @@ def _redacted_request(profile, thread_messages):
     return build_request(redacted_profile, redacted_messages)
 
 
-def main():
+def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE,
                          help="real chat.db to copy messages from")
@@ -130,14 +151,35 @@ def main():
                               "days; pass a very large value to disable")
     parser.add_argument("--call", action="store_true",
                          help="actually call the Claude API; omit to only preview requests")
-    parser.add_argument(
+    retriage_group = parser.add_mutually_exclusive_group()
+    retriage_group.add_argument(
         "--retriage-one",
         action="store_true",
         help="reassess exactly one previously triaged, still-unanswered thread",
     )
+    retriage_group.add_argument(
+        "--retriage-all",
+        action="store_true",
+        help="reassess all previously triaged, still-unanswered eligible threads",
+    )
+    parser.add_argument(
+        "--confirm-retriage-all",
+        action="store_true",
+        help="required confirmation when combining --retriage-all with --call",
+    )
     parser.add_argument("--keep-copy", action="store_true",
                          help="don't delete the chat.db copy afterward (default: delete it)")
+    return parser
+
+
+def main():
+    parser = _build_parser()
     args = parser.parse_args()
+
+    if args.call and args.retriage_all and not args.confirm_retriage_all:
+        parser.error(
+            "--call --retriage-all requires explicit --confirm-retriage-all"
+        )
 
     if args.keep_copy:
         chat_copy_path = copy_chat_db(args.source, args.copy_dest)
@@ -163,6 +205,7 @@ def _run(chat_copy_path: Path, args):
         candidates,
         last_triaged,
         retriage_one=args.retriage_one,
+        retriage_all=args.retriage_all,
     )
 
     if unchanged:
@@ -173,16 +216,19 @@ def _run(chat_copy_path: Path, args):
 
     if filtered:
         print(f"{len(filtered)} filtered as likely automated (not sent to triage):")
-        for candidate, _ in filtered:
-            print(f"  thread_id={candidate['thread_id']}")
+        for candidate, filter_reason in filtered:
+            print(f"  thread_id={candidate['thread_id']} — {filter_reason}")
         print()
 
     if args.retriage_one:
         print("retriage-one mode: at most one API request and one stored-result replacement")
+    elif args.retriage_all:
+        print("retriage-all mode: all eligible prior results will be reassessed")
     print(f"{len(to_triage)} candidate(s) proceeding to triage\n")
 
     client = None
     if args.call:
+        print(f"API calls about to be made: {len(to_triage)}")
         import anthropic
         client = anthropic.Anthropic()
 

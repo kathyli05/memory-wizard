@@ -26,6 +26,7 @@ def test_default_lookback_excludes_very_old_thread_but_keeps_recent_one(tmp_path
     thread_ids = _candidate_thread_ids(messages)
 
     assert 3 in thread_ids  # ~3 days old, well within the default window
+    assert 4 in thread_ids  # ~2 hours old, included by the default 0h threshold
     assert 5 not in thread_ids  # ~200 days old, past the default 150-day window
 
 

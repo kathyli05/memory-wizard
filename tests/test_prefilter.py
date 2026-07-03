@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from triage.prefilter import is_likely_automated
+from triage.prefilter import automated_filter_reason, is_likely_automated
 
 
 def test_otp_from_shortcode_is_filtered():
@@ -64,3 +64,29 @@ def test_real_ask_survives_an_opt_out_footer():
 
 def test_human_saying_stop_still_overrides():
     assert not is_likely_automated("+15556667777", "can you stop by tomorrow?")
+
+
+def test_filter_reasons_are_specific_and_contain_no_private_input():
+    private_sender = "+18885551234"
+    private_text = "Private sale details. Text STOP to opt out."
+
+    reason = automated_filter_reason(private_sender, private_text)
+
+    assert reason == (
+        "contains an unsubscribe/opt-out footer, which is a strong "
+        "automated-marketing signal"
+    )
+    assert private_sender not in reason
+    assert private_text not in reason
+
+
+def test_filter_reason_categories_cover_code_and_shortcode_rules():
+    assert (
+        automated_filter_reason("782929", "Your verification code is 482910.")
+        == "matches a verification or one-time-code pattern and contains "
+        "no genuine reply request"
+    )
+    assert (
+        automated_filter_reason("65123", "Your package has been delivered.")
+        == "comes from a 4–6 digit shortcode and contains no genuine reply request"
+    )
