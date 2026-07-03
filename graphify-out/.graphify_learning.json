@@ -1,21 +1,26 @@
 {
-  "generated_at": "2026-07-03T19:38:34.928341+00:00",
+  "generated_at": "2026-07-03T21:28:50.878598+00:00",
   "nodes": {
     "evals_readme_synthetic_triage_evaluations": {
       "code_fingerprint": "2cba7a947c1202ab34d722a51b03e6ab2c7da784b5d3ad38901af03db7786efb",
       "label": "Synthetic triage evaluations",
-      "last": "2026-07-03T19:20:53.160677+00:00",
+      "last": "2026-07-03T19:39:38.816213+00:00",
       "provenance": [
+        {
+          "date": "2026-07-03T19:39:38.816213+00:00",
+          "outcome": "useful",
+          "q": "Locate and update the evaluation journal with lessons from each pipeline iteration"
+        },
         {
           "date": "2026-07-03T19:20:53.160677+00:00",
           "outcome": "useful",
           "q": "Is the supplied synthetic triage evaluation preview legitimate?"
         }
       ],
-      "score": 0.999716105,
+      "score": 1.996198343,
       "source_file": "evals/README.md",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 2
     },
     "scripts_run_triage_eval": {
       "code_fingerprint": "9f3c1a5bd0ef7ee65643609c0153630b46b23c2c5e779afdb0ac9db6e38a295f",
@@ -38,7 +43,7 @@
           "q": "Is the supplied synthetic triage evaluation preview legitimate?"
         }
       ],
-      "score": 2.999496909,
+      "score": 2.99419482,
       "source_file": "scripts/run_triage_eval.py",
       "status": "preferred",
       "uses": 3
@@ -54,7 +59,7 @@
           "q": "Assess the attached 20-case paid synthetic triage evaluation"
         }
       ],
-      "score": 0.999785353,
+      "score": 0.998018073,
       "source_file": "scripts/run_triage_eval.py",
       "status": "tentative",
       "uses": 1
@@ -70,7 +75,7 @@
           "q": "Is the supplied synthetic triage evaluation preview legitimate?"
         }
       ],
-      "score": 0.999716105,
+      "score": 0.997948947,
       "source_file": "scripts/run_triage_eval.py",
       "status": "tentative",
       "uses": 1
@@ -86,7 +91,7 @@
           "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
         }
       ],
-      "score": 0.999694911,
+      "score": 0.997927791,
       "source_file": "tests/test_run_triage_script.py",
       "status": "tentative",
       "uses": 1
@@ -112,7 +117,7 @@
           "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
         }
       ],
-      "score": 2.999475716,
+      "score": 2.994173664,
       "source_file": "triage/triage_agent.py",
       "status": "preferred",
       "uses": 3
@@ -128,7 +133,7 @@
           "q": "do you think it would be better to do this for the last 10 messages? is 5 too little? what are the pros and cons"
         }
       ],
-      "score": 0.999694911,
+      "score": 0.997927791,
       "source_file": "triage/triage_agent.py",
       "status": "tentative",
       "uses": 1
@@ -154,7 +159,7 @@
           "q": "Is the supplied synthetic triage evaluation preview legitimate?"
         }
       ],
-      "score": 2.999496909,
+      "score": 2.99419482,
       "source_file": "triage/triage_agent.py",
       "status": "preferred",
       "uses": 3
@@ -170,7 +175,7 @@
           "q": "Implement the approved triage time-context and scam-aware fix"
         }
       ],
-      "score": 0.999995452,
+      "score": 0.9982278,
       "source_file": "triage/triage_agent.py",
       "status": "tentative",
       "uses": 1
