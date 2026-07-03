@@ -252,6 +252,36 @@ button[data-testid="stPopoverButton"]:focus-visible {
   outline-offset: 2px;
 }
 
+/* button hierarchy — primary: Dismiss (filled gradient, white text >= 4.5:1
+   at both gradient stops); secondary: default pill (Snooze, Refresh, etc.);
+   tertiary: feedback chips below */
+button[data-testid="stBaseButton-primary"] {
+  background: linear-gradient(92deg, #6d47e0, #b83585) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+button[data-testid="stBaseButton-primary"]:hover {
+  background: linear-gradient(92deg, #7a52f0, #b83585) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(120, 86, 255, 0.35);
+}
+
+/* tertiary feedback chips — quiet by default, surface on hover */
+div[class*="st-key-feedback_row"] button {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--mw-ink-soft) !important;
+  min-height: 2rem !important;
+  padding: 0.1rem 0.7rem !important;
+}
+div[class*="st-key-feedback_row"] button p { font-size: 0.83rem !important; }
+div[class*="st-key-feedback_row"] button:hover {
+  background: var(--mw-btn-hover-bg) !important;
+  border-color: var(--mw-card-border) !important;
+  color: var(--mw-ink) !important;
+}
+
 [data-testid="stPopoverBody"] {
   border-radius: 18px !important;
   border: 1px solid var(--mw-card-border) !important;
@@ -426,7 +456,9 @@ def render_feedback_controls(result: dict):
     }
 
     st.caption("Was this assessment useful?")
-    with st.container(horizontal=True, gap="small"):
+    # Keyed so CSS can render these as quiet tertiary chips: feedback is
+    # optional meta-input and sits below Dismiss/Snooze in the hierarchy.
+    with st.container(horizontal=True, gap="small", key=f"feedback_row_{thread_id}"):
         if st.button("Correct", key=f"feedback_correct_{thread_id}"):
             record_feedback(
                 **common,
@@ -492,7 +524,7 @@ def render_card(result: dict, hours_by_thread: dict):
         render_feedback_controls(result)
 
         with st.container(horizontal=True, gap="small", horizontal_alignment="right"):
-            if st.button("Dismiss", key=f"dismiss_{thread_id}"):
+            if st.button("Dismiss", key=f"dismiss_{thread_id}", type="primary"):
                 dismiss_result(TRIAGE_DB_PATH, thread_id)
                 st.rerun()
             render_snooze_controls(thread_id)
