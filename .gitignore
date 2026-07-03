@@ -12,5 +12,11 @@ venv/
 *.egg-info/
 .env
 
+# Personal notes that should never be committed
+.local/
+
+# Local synthetic evaluation history
+evals/reports/
+
 # Locally compiled, permission-scoped Contacts helper
 native/contacts_helper/.build/

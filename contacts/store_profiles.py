@@ -15,6 +15,11 @@ CREATE TABLE IF NOT EXISTS contact_profiles (
     message_count_90d INTEGER NOT NULL,
     messages_per_day_90d REAL NOT NULL,
     median_response_latency_seconds_365d REAL,
+    reply_opportunity_count_365d INTEGER NOT NULL DEFAULT 0,
+    replied_within_1h_count_365d INTEGER NOT NULL DEFAULT 0,
+    replied_within_1d_count_365d INTEGER NOT NULL DEFAULT 0,
+    replied_within_3d_count_365d INTEGER NOT NULL DEFAULT 0,
+    replied_within_7d_count_365d INTEGER NOT NULL DEFAULT 0,
     conversation_count_365d INTEGER NOT NULL,
     initiation_ratio_me_365d REAL,
     computed_at TEXT NOT NULL
@@ -24,11 +29,17 @@ CREATE TABLE IF NOT EXISTS contact_profiles (
 _UPSERT = """
 INSERT INTO contact_profiles (
     thread_id, thread_name, message_count_90d, messages_per_day_90d,
-    median_response_latency_seconds_365d, conversation_count_365d,
+    median_response_latency_seconds_365d, reply_opportunity_count_365d,
+    replied_within_1h_count_365d, replied_within_1d_count_365d,
+    replied_within_3d_count_365d, replied_within_7d_count_365d,
+    conversation_count_365d,
     initiation_ratio_me_365d, computed_at
 ) VALUES (
     :thread_id, :thread_name, :message_count_90d, :messages_per_day_90d,
-    :median_response_latency_seconds_365d, :conversation_count_365d,
+    :median_response_latency_seconds_365d, :reply_opportunity_count_365d,
+    :replied_within_1h_count_365d, :replied_within_1d_count_365d,
+    :replied_within_3d_count_365d, :replied_within_7d_count_365d,
+    :conversation_count_365d,
     :initiation_ratio_me_365d, :computed_at
 )
 ON CONFLICT(thread_id) DO UPDATE SET
@@ -36,6 +47,11 @@ ON CONFLICT(thread_id) DO UPDATE SET
     message_count_90d=excluded.message_count_90d,
     messages_per_day_90d=excluded.messages_per_day_90d,
     median_response_latency_seconds_365d=excluded.median_response_latency_seconds_365d,
+    reply_opportunity_count_365d=excluded.reply_opportunity_count_365d,
+    replied_within_1h_count_365d=excluded.replied_within_1h_count_365d,
+    replied_within_1d_count_365d=excluded.replied_within_1d_count_365d,
+    replied_within_3d_count_365d=excluded.replied_within_3d_count_365d,
+    replied_within_7d_count_365d=excluded.replied_within_7d_count_365d,
     conversation_count_365d=excluded.conversation_count_365d,
     initiation_ratio_me_365d=excluded.initiation_ratio_me_365d,
     computed_at=excluded.computed_at
@@ -52,6 +68,20 @@ def init_db(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(contact_profiles)")}
+        additive_columns = (
+            "reply_opportunity_count_365d",
+            "replied_within_1h_count_365d",
+            "replied_within_1d_count_365d",
+            "replied_within_3d_count_365d",
+            "replied_within_7d_count_365d",
+        )
+        for name in additive_columns:
+            if name not in columns:
+                conn.execute(
+                    f"ALTER TABLE contact_profiles ADD COLUMN {name} "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
         conn.commit()
     finally:
         conn.close()

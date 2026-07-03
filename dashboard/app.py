@@ -220,6 +220,7 @@ div[class*="st-key-card-low-"]  { border-left-color: var(--mw-low); }
 .mw-pill-high { background: var(--mw-high-bg); color: var(--mw-high-ink); border: 1px solid var(--mw-high); }
 .mw-pill-med  { background: var(--mw-med-bg);  color: var(--mw-med-ink);  border: 1px solid var(--mw-med); }
 .mw-pill-low  { background: var(--mw-low-bg);  color: var(--mw-low-ink);  border: 1px solid var(--mw-low); }
+.mw-pill-action { background: #e8f7ee; color: #17653a; border: 1px solid #67b887; }
 .mw-age { color: var(--mw-ink-soft); font-size: 0.82rem; }
 .mw-thread-name { font-size: 1.18rem; font-weight: 800; color: var(--mw-ink); margin-top: 0.55rem; }
 
@@ -557,6 +558,11 @@ def render_card(result: dict, hours_by_thread: dict):
     meta = URGENCY_META[urgency]
     hours = hours_by_thread.get(thread_id)
     age_label = _format_hours(hours) if hours is not None else "unknown"
+    action_pill = (
+        '<span class="mw-pill mw-pill-action">✅ Action required</span>'
+        if result.get("action_required")
+        else ""
+    )
 
     with st.container(key=f"card-{urgency}-{thread_id}"):
         # thread_name is HTML-escaped and reasoning rendered as plain text —
@@ -565,11 +571,18 @@ def render_card(result: dict, hours_by_thread: dict):
         st.markdown(
             '<div class="mw-card-head">'
             f'<span class="mw-pill mw-pill-{urgency}">{meta["emoji"]} {meta["label"]}</span>'
+            f'{action_pill}'
             f'<span class="mw-age">unanswered {_escape(age_label)}</span>'
             "</div>"
             f'<div class="mw-thread-name">{_escape(result["thread_name"])}</div>',
             unsafe_allow_html=True,
         )
+
+        if result.get("action_required"):
+            if result.get("next_action"):
+                st.text(f'Next: {result["next_action"]}')
+            else:
+                st.caption("✅ Action required — open the thread for the specific request")
 
         if result["reasoning"]:
             st.text(result["reasoning"])

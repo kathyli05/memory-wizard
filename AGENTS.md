@@ -28,6 +28,10 @@ and judgment* layer without removing my agency over final decisions.
   local SQLite DB (`./data/triage.db`), never upstream of it.
 - **Never auto-send messages.** Draft generation only, on explicit user
   request per-thread. The user always copies/sends manually.
+- **Placeholder replies do not count as responses.** If the user sends a
+  deferral such as "I'll respond later," "I'll get back to you," or similar,
+  the thread remains awaiting a substantive response and must not be marked
+  handled, resolved, or replied-to on that basis.
 - **Minimize what goes to the Codex API.** Triage calls get contact profile
   + last 5 messages of that thread only — not full history. Never send more
   context than the task in front of you needs.

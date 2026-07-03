@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import sys
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -173,7 +174,11 @@ def test_preview_preserves_request_shape_but_redacts_private_strings():
 
     assert request["tool_choice"]["name"] == "emit_triage_assessment"
     assert "needs_review" in request["tools"][0]["input_schema"]["required"]
+    assert "action_required" in request["tools"][0]["input_schema"]["required"]
+    assert "next_action" in request["tools"][0]["input_schema"]["required"]
+    assert "provide availability" in request["system"]
     assert "Use this urgency rubric consistently" in request["system"]
+    assert "Median response latency" not in serialized
     assert "[REDACTED THREAD]" in serialized
     assert "[REDACTED SENDER]" in serialized
     assert "[REDACTED readable message 1]" in serialized
@@ -253,7 +258,9 @@ def test_max_calls_must_be_positive_and_caps_preview_shape():
     assert _apply_max_calls(candidates, 2) == candidates[:2]
 
 
-def test_call_run_stores_partial_successes_and_enforces_retention(monkeypatch, capsys):
+def test_call_run_stores_partial_successes_and_enforces_retention(
+    monkeypatch, capsys, tmp_path
+):
     messages = [_message(1, "one"), _message(2, "two"), _message(3, "three")]
     candidates = [_candidate(1), _candidate(2), _candidate(3)]
     profiles = [
@@ -279,8 +286,16 @@ def test_call_run_stores_partial_successes_and_enforces_retention(monkeypatch, c
             "thread_id": profile["thread_id"],
             "urgency": "med",
             "reasoning": "derived rationale",
+            "action_required": True,
+            "next_action": "Confirm the synthetic request.",
             "suggest_nudge": True,
             "needs_review": False,
+            "_usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_creation_tokens": 10,
+                "cache_read_tokens": 5,
+            },
         }
 
     monkeypatch.setattr("scripts.run_triage.parse_messages", lambda _: messages)
@@ -298,7 +313,7 @@ def test_call_run_stores_partial_successes_and_enforces_retention(monkeypatch, c
     args = SimpleNamespace(
         threshold_hours=0,
         lookback_days=7,
-        dest="temporary-test.db",
+        dest=tmp_path / "triage.db",
         retriage_one=False,
         retriage_all=False,
         max_calls=None,
@@ -312,3 +327,76 @@ def test_call_run_stores_partial_successes_and_enforces_retention(monkeypatch, c
     assert "private provider error" not in output
     assert call_count == 3
     assert [result["thread_id"] for result in stored] == [1, 3]
+
+    conn = sqlite3.connect(args.dest)
+    try:
+        run = conn.execute(
+            "SELECT attempted_count, success_count, failure_count, input_tokens, "
+            "output_tokens FROM triage_runs"
+        ).fetchone()
+        calls = conn.execute(
+            "SELECT thread_id, status, error_type FROM triage_call_log ORDER BY thread_id"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert run == (3, 2, 1, 200, 40)
+    assert calls == [
+        (1, "success", None),
+        (2, "failure", "unexpected"),
+        (3, "success", None),
+    ]
+    assert "usage: input=200 output=40" in output
+
+
+def test_zero_candidate_call_run_records_zero_attempt_summary(monkeypatch, tmp_path):
+    monkeypatch.setattr("scripts.run_triage.parse_messages", lambda _: [])
+    monkeypatch.setattr("scripts.run_triage.find_unanswered_threads", lambda *a, **k: [])
+    monkeypatch.setattr("scripts.run_triage.compute_all_profiles", lambda _: [])
+    monkeypatch.setattr("scripts.run_triage.get_last_triaged_timestamps", lambda _: {})
+    monkeypatch.setattr(
+        "scripts.run_triage._create_anthropic_client",
+        lambda: (_ for _ in ()).throw(AssertionError("zero candidates needs no client")),
+    )
+    args = SimpleNamespace(
+        threshold_hours=24, lookback_days=7, dest=tmp_path / "triage.db",
+        retriage_one=False, retriage_all=False, max_calls=5, call=True,
+    )
+    _run("synthetic-copy.db", args)
+    with sqlite3.connect(args.dest) as conn:
+        assert conn.execute(
+            "SELECT eligible_count, attempted_count, success_count, failure_count "
+            "FROM triage_runs"
+        ).fetchone() == (0, 0, 0, 0)
+
+
+def test_capped_call_run_attempts_only_the_cap(monkeypatch, tmp_path):
+    messages = [_message(1, "one"), _message(2, "two")]
+    candidates = [_candidate(1), _candidate(2)]
+    profiles = [{
+        "thread_id": thread_id, "thread_name": "private",
+        "median_response_latency_seconds_365d": None,
+        "message_count_90d": 1, "messages_per_day_90d": 0.01,
+        "initiation_ratio_me_365d": None,
+    } for thread_id in (1, 2)]
+    monkeypatch.setattr("scripts.run_triage.parse_messages", lambda _: messages)
+    monkeypatch.setattr("scripts.run_triage.find_unanswered_threads", lambda *a, **k: candidates)
+    monkeypatch.setattr("scripts.run_triage.compute_all_profiles", lambda _: profiles)
+    monkeypatch.setattr("scripts.run_triage.get_last_triaged_timestamps", lambda _: {})
+    monkeypatch.setattr("scripts.run_triage._create_anthropic_client", lambda: object())
+    monkeypatch.setattr("scripts.run_triage.run_triage", lambda *a: {
+        "thread_id": a[1]["thread_id"], "urgency": "low", "reasoning": "derived",
+        "action_required": False, "next_action": "",
+        "suggest_nudge": False, "needs_review": False,
+        "_usage": {"input_tokens": 1, "output_tokens": 1,
+                   "cache_creation_tokens": 0, "cache_read_tokens": 0},
+    })
+    args = SimpleNamespace(
+        threshold_hours=24, lookback_days=7, dest=tmp_path / "triage.db",
+        retriage_one=False, retriage_all=False, max_calls=1, call=True,
+    )
+    _run("synthetic-copy.db", args)
+    with sqlite3.connect(args.dest) as conn:
+        assert conn.execute(
+            "SELECT eligible_count, attempted_count FROM triage_runs"
+        ).fetchone() == (2, 1)
+        assert conn.execute("SELECT COUNT(*) FROM triage_call_log").fetchone()[0] == 1

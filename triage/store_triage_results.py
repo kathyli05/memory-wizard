@@ -2,10 +2,9 @@
 
 Per CLAUDE.md: raw message text is deleted from our local DB after the
 retention period (default 14 days) — only derived signals persist past
-that window. `reasoning` is the one field here that's derived from message
-content (it can quote or paraphrase the messages it was computed from), so
-enforce_retention clears it past the window; `urgency`/`suggest_nudge` are
-already fully derived signals and are left alone.
+that window. `reasoning` and `next_action` can quote or paraphrase message
+content, so enforce_retention clears them past the window; boolean/category
+signals such as `urgency`, `action_required`, and `suggest_nudge` remain.
 
 Dashboard action state (status/snoozed_until) lives on this same row.
 upsert_results always resets a thread to 'pending' — it's only ever called
@@ -30,12 +29,18 @@ CREATE TABLE IF NOT EXISTS triage_results (
     thread_name TEXT,
     urgency TEXT NOT NULL,
     reasoning TEXT,
+    action_required INTEGER NOT NULL DEFAULT 0,
+    next_action TEXT,
     suggest_nudge INTEGER NOT NULL,
     needs_review INTEGER NOT NULL DEFAULT 0,
     last_message_timestamp TEXT NOT NULL,
     computed_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'dismissed', 'snoozed')),
-    snoozed_until TEXT
+    snoozed_until TEXT,
+    run_id TEXT,
+    prompt_version TEXT,
+    prompt_fingerprint TEXT,
+    model TEXT
 );
 
 CREATE TABLE IF NOT EXISTS triage_feedback (
@@ -53,30 +58,87 @@ CREATE TABLE IF NOT EXISTS triage_feedback (
         OR (reply_worthy = 1 AND urgency_correct = 0 AND corrected_urgency IS NOT NULL)
     )
 );
+
+CREATE TABLE IF NOT EXISTS triage_runs (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    mode TEXT NOT NULL CHECK(mode IN ('regular', 'retriage_one', 'retriage_all')),
+    lookback_days REAL NOT NULL,
+    threshold_hours REAL NOT NULL,
+    max_calls INTEGER CHECK(max_calls IS NULL OR max_calls > 0),
+    prompt_version TEXT NOT NULL,
+    prompt_fingerprint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    eligible_count INTEGER NOT NULL DEFAULT 0 CHECK(eligible_count >= 0),
+    attempted_count INTEGER NOT NULL DEFAULT 0 CHECK(attempted_count >= 0),
+    success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
+    failure_count INTEGER NOT NULL DEFAULT 0 CHECK(failure_count >= 0),
+    input_tokens INTEGER NOT NULL DEFAULT 0 CHECK(input_tokens >= 0),
+    output_tokens INTEGER NOT NULL DEFAULT 0 CHECK(output_tokens >= 0),
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0 CHECK(cache_creation_tokens >= 0),
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0 CHECK(cache_read_tokens >= 0),
+    estimated_cost_usd REAL NOT NULL DEFAULT 0 CHECK(estimated_cost_usd >= 0),
+    pricing_version TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS triage_call_log (
+    run_id TEXT NOT NULL,
+    thread_id INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL CHECK(latency_ms >= 0),
+    status TEXT NOT NULL CHECK(status IN ('success', 'failure')),
+    error_type TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0 CHECK(input_tokens >= 0),
+    output_tokens INTEGER NOT NULL DEFAULT 0 CHECK(output_tokens >= 0),
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0 CHECK(cache_creation_tokens >= 0),
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0 CHECK(cache_read_tokens >= 0),
+    estimated_cost_usd REAL NOT NULL DEFAULT 0 CHECK(estimated_cost_usd >= 0),
+    prompt_version TEXT NOT NULL,
+    prompt_fingerprint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    PRIMARY KEY (run_id, thread_id),
+    FOREIGN KEY (run_id) REFERENCES triage_runs(run_id),
+    CHECK ((status = 'success' AND error_type IS NULL)
+        OR (status = 'failure' AND error_type IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_triage_call_log_run_id ON triage_call_log(run_id);
 """
 
 _UPSERT = """
 INSERT INTO triage_results (
-    thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
-    last_message_timestamp, computed_at, status, snoozed_until
+    thread_id, thread_name, urgency, reasoning, action_required, next_action,
+    suggest_nudge, needs_review,
+    last_message_timestamp, computed_at, status, snoozed_until,
+    run_id, prompt_version, prompt_fingerprint, model
 ) VALUES (
-    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge, :needs_review,
-    :last_message_timestamp, :computed_at, 'pending', NULL
+    :thread_id, :thread_name, :urgency, :reasoning, :action_required, :next_action,
+    :suggest_nudge, :needs_review,
+    :last_message_timestamp, :computed_at, 'pending', NULL,
+    :run_id, :prompt_version, :prompt_fingerprint, :model
 )
 ON CONFLICT(thread_id) DO UPDATE SET
     thread_name=excluded.thread_name,
     urgency=excluded.urgency,
     reasoning=excluded.reasoning,
+    action_required=excluded.action_required,
+    next_action=excluded.next_action,
     suggest_nudge=excluded.suggest_nudge,
     needs_review=excluded.needs_review,
     last_message_timestamp=excluded.last_message_timestamp,
     computed_at=excluded.computed_at,
+    run_id=excluded.run_id,
+    prompt_version=excluded.prompt_version,
+    prompt_fingerprint=excluded.prompt_fingerprint,
+    model=excluded.model,
     status='pending',
     snoozed_until=NULL
 """
 
 _ACTIVE_RESULTS_QUERY = """
-SELECT thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
+SELECT thread_id, thread_name, urgency, reasoning, action_required, next_action,
+       suggest_nudge, needs_review,
        last_message_timestamp, computed_at, status, snoozed_until
 FROM triage_results
 WHERE status = 'pending'
@@ -96,11 +158,20 @@ def init_db(db_path: Path) -> None:
     try:
         conn.executescript(SCHEMA)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
-        if "needs_review" not in columns:
-            conn.execute(
-                "ALTER TABLE triage_results "
-                "ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0"
-            )
+        additive_columns = {
+            "needs_review": "INTEGER NOT NULL DEFAULT 0",
+            "action_required": "INTEGER NOT NULL DEFAULT 0",
+            "next_action": "TEXT",
+            "run_id": "TEXT",
+            "prompt_version": "TEXT",
+            "prompt_fingerprint": "TEXT",
+            "model": "TEXT",
+        }
+        for name, declaration in additive_columns.items():
+            if name not in columns:
+                conn.execute(
+                    f"ALTER TABLE triage_results ADD COLUMN {name} {declaration}"
+                )
         conn.commit()
     finally:
         conn.close()
@@ -115,8 +186,14 @@ def upsert_results(db_path: Path, results: list[dict]) -> None:
             [
                 {
                     **r,
+                    "action_required": int(r.get("action_required", False)),
+                    "next_action": r.get("next_action") or None,
                     "suggest_nudge": int(r["suggest_nudge"]),
                     "needs_review": int(r.get("needs_review", False)),
+                    "run_id": r.get("run_id"),
+                    "prompt_version": r.get("prompt_version"),
+                    "prompt_fingerprint": r.get("prompt_fingerprint"),
+                    "model": r.get("model"),
                 }
                 for r in results
             ],
@@ -124,6 +201,63 @@ def upsert_results(db_path: Path, results: list[dict]) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def create_run(db_path: Path, run: dict) -> None:
+    """Create a derived-only run row. Preview mode must never call this."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO triage_runs (
+                run_id, started_at, mode, lookback_days, threshold_hours, max_calls,
+                prompt_version, prompt_fingerprint, model, eligible_count,
+                pricing_version
+            ) VALUES (
+                :run_id, :started_at, :mode, :lookback_days, :threshold_hours,
+                :max_calls, :prompt_version, :prompt_fingerprint, :model,
+                :eligible_count, :pricing_version
+            )""",
+            run,
+        )
+
+
+def record_call(db_path: Path, call: dict) -> None:
+    """Persist one attempted call using safe metadata only."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO triage_call_log (
+                run_id, thread_id, started_at, latency_ms, status, error_type,
+                input_tokens, output_tokens, cache_creation_tokens,
+                cache_read_tokens, estimated_cost_usd, prompt_version,
+                prompt_fingerprint, model
+            ) VALUES (
+                :run_id, :thread_id, :started_at, :latency_ms, :status,
+                :error_type, :input_tokens, :output_tokens,
+                :cache_creation_tokens, :cache_read_tokens,
+                :estimated_cost_usd, :prompt_version, :prompt_fingerprint, :model
+            )""",
+            call,
+        )
+
+
+def complete_run(db_path: Path, run_id: str, summary: dict) -> None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """UPDATE triage_runs SET
+                completed_at=:completed_at,
+                attempted_count=:attempted_count,
+                success_count=:success_count,
+                failure_count=:failure_count,
+                input_tokens=:input_tokens,
+                output_tokens=:output_tokens,
+                cache_creation_tokens=:cache_creation_tokens,
+                cache_read_tokens=:cache_read_tokens,
+                estimated_cost_usd=:estimated_cost_usd
+            WHERE run_id=:run_id""",
+            {"run_id": run_id, **summary},
+        )
 
 
 def record_feedback(
@@ -251,7 +385,7 @@ def snooze_result(db_path: Path, thread_id: int, until: datetime) -> None:
 
 
 def enforce_retention(db_path: Path, *, now: datetime | None = None) -> int:
-    """Null out `reasoning` on rows older than RETENTION_DAYS. Returns the
+    """Null out `reasoning` and `next_action` past RETENTION_DAYS. Returns the
     number of rows scrubbed. Called by both triage runs and every dashboard
     load, so stale reasoning gets scrubbed even if triage stops running."""
     now = now or datetime.now()
@@ -261,8 +395,8 @@ def enforce_retention(db_path: Path, *, now: datetime | None = None) -> int:
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(
-            "UPDATE triage_results SET reasoning = NULL "
-            "WHERE computed_at < ? AND reasoning IS NOT NULL",
+            "UPDATE triage_results SET reasoning = NULL, next_action = NULL "
+            "WHERE computed_at < ? AND (reasoning IS NOT NULL OR next_action IS NOT NULL)",
             (cutoff,),
         )
         conn.commit()
