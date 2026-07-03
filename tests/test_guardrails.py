@@ -129,6 +129,15 @@ def test_dashboard_never_renders_untrusted_fields_as_markdown():
     assert 'st.markdown(result["reasoning"]' not in app_src
 
 
+def test_dashboard_feedback_is_separate_from_dismiss_and_nudge_wording_is_clear():
+    app_src = (REPO_ROOT / "dashboard" / "app.py").read_text()
+    assert 'st.button("Correct"' in app_src
+    assert 'st.popover("Wrong urgency")' in app_src
+    assert 'st.button("Not reply-worthy"' in app_src
+    assert "remind me to reply" in app_src
+    assert "consider sending a nudge" not in app_src
+
+
 def test_streamlit_config_pins_localhost():
     config = (REPO_ROOT / ".streamlit" / "config.toml").read_text()
     assert re.search(r'address\s*=\s*"localhost"', config), (

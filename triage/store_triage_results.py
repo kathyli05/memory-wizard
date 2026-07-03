@@ -31,19 +31,36 @@ CREATE TABLE IF NOT EXISTS triage_results (
     urgency TEXT NOT NULL,
     reasoning TEXT,
     suggest_nudge INTEGER NOT NULL,
+    needs_review INTEGER NOT NULL DEFAULT 0,
     last_message_timestamp TEXT NOT NULL,
     computed_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'dismissed', 'snoozed')),
     snoozed_until TEXT
 );
+
+CREATE TABLE IF NOT EXISTS triage_feedback (
+    thread_id INTEGER NOT NULL,
+    result_computed_at TEXT NOT NULL,
+    model_urgency TEXT NOT NULL CHECK(model_urgency IN ('low', 'med', 'high')),
+    urgency_correct INTEGER CHECK(urgency_correct IN (0, 1) OR urgency_correct IS NULL),
+    corrected_urgency TEXT CHECK(corrected_urgency IN ('low', 'med', 'high') OR corrected_urgency IS NULL),
+    reply_worthy INTEGER NOT NULL CHECK(reply_worthy IN (0, 1)),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (thread_id, result_computed_at),
+    CHECK (
+        (reply_worthy = 0 AND urgency_correct IS NULL AND corrected_urgency IS NULL)
+        OR (reply_worthy = 1 AND urgency_correct = 1 AND corrected_urgency IS NULL)
+        OR (reply_worthy = 1 AND urgency_correct = 0 AND corrected_urgency IS NOT NULL)
+    )
+);
 """
 
 _UPSERT = """
 INSERT INTO triage_results (
-    thread_id, thread_name, urgency, reasoning, suggest_nudge,
+    thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
     last_message_timestamp, computed_at, status, snoozed_until
 ) VALUES (
-    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge,
+    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge, :needs_review,
     :last_message_timestamp, :computed_at, 'pending', NULL
 )
 ON CONFLICT(thread_id) DO UPDATE SET
@@ -51,6 +68,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
     urgency=excluded.urgency,
     reasoning=excluded.reasoning,
     suggest_nudge=excluded.suggest_nudge,
+    needs_review=excluded.needs_review,
     last_message_timestamp=excluded.last_message_timestamp,
     computed_at=excluded.computed_at,
     status='pending',
@@ -58,7 +76,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
 """
 
 _ACTIVE_RESULTS_QUERY = """
-SELECT thread_id, thread_name, urgency, reasoning, suggest_nudge,
+SELECT thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
        last_message_timestamp, computed_at, status, snoozed_until
 FROM triage_results
 WHERE status = 'pending'
@@ -77,6 +95,12 @@ def init_db(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
+        if "needs_review" not in columns:
+            conn.execute(
+                "ALTER TABLE triage_results "
+                "ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -88,9 +112,73 @@ def upsert_results(db_path: Path, results: list[dict]) -> None:
     try:
         conn.executemany(
             _UPSERT,
-            [{**r, "suggest_nudge": int(r["suggest_nudge"])} for r in results],
+            [
+                {
+                    **r,
+                    "suggest_nudge": int(r["suggest_nudge"]),
+                    "needs_review": int(r.get("needs_review", False)),
+                }
+                for r in results
+            ],
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def record_feedback(
+    db_path: Path,
+    *,
+    thread_id: int,
+    result_computed_at: str,
+    model_urgency: str,
+    urgency_correct: bool | None,
+    corrected_urgency: str | None,
+    reply_worthy: bool,
+    created_at: datetime | None = None,
+) -> None:
+    """Store derived user feedback without names, reasoning, or message text."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO triage_feedback (
+                thread_id, result_computed_at, model_urgency, urgency_correct,
+                corrected_urgency, reply_worthy, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(thread_id, result_computed_at) DO UPDATE SET
+                model_urgency=excluded.model_urgency,
+                urgency_correct=excluded.urgency_correct,
+                corrected_urgency=excluded.corrected_urgency,
+                reply_worthy=excluded.reply_worthy,
+                created_at=excluded.created_at
+            """,
+            (
+                thread_id,
+                result_computed_at,
+                model_urgency,
+                None if urgency_correct is None else int(urgency_correct),
+                corrected_urgency,
+                int(reply_worthy),
+                (created_at or datetime.now()).isoformat(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_feedback(db_path: Path) -> list[dict]:
+    """Return derived feedback rows, oldest first, for local quality review."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM triage_feedback ORDER BY created_at ASC"
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 

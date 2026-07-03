@@ -9,6 +9,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from triage.store_triage_results import (
@@ -16,7 +18,10 @@ from triage.store_triage_results import (
     dismiss_result,
     enforce_retention,
     get_active_results,
+    get_feedback,
     get_last_triaged_timestamps,
+    init_db,
+    record_feedback,
     snooze_result,
     upsert_results,
 )
@@ -42,6 +47,7 @@ def _seed(db_path, thread_id, *, urgency="med", computed_at=None):
         "urgency": urgency,
         "reasoning": f"reasoning for thread {thread_id}",
         "suggest_nudge": True,
+        "needs_review": True,
         "last_message_timestamp": computed_at,
         "computed_at": computed_at,
     }])
@@ -64,6 +70,7 @@ def test_upsert_writes_all_fields(tmp_path):
         "urgency": "high",
         "reasoning": "They asked a direct question 3 days ago with no reply.",
         "suggest_nudge": True,
+        "needs_review": True,
         "last_message_timestamp": last_message_at,
         "computed_at": now,
     }])
@@ -72,6 +79,7 @@ def test_upsert_writes_all_fields(tmp_path):
     assert row["urgency"] == "high"
     assert row["reasoning"] == "They asked a direct question 3 days ago with no reply."
     assert row["suggest_nudge"] == 1
+    assert row["needs_review"] == 1
     assert row["last_message_timestamp"] == last_message_at
     assert row["computed_at"] == now
 
@@ -202,3 +210,95 @@ def test_reupserting_a_dismissed_thread_reopens_it(tmp_path):
 
     active = get_active_results(db_path)
     assert [r["thread_id"] for r in active] == [1]
+
+
+def test_init_db_adds_needs_review_to_existing_results_table(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE triage_results (
+                thread_id INTEGER PRIMARY KEY,
+                thread_name TEXT,
+                urgency TEXT NOT NULL,
+                reasoning TEXT,
+                suggest_nudge INTEGER NOT NULL,
+                last_message_timestamp TEXT NOT NULL,
+                computed_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                snoozed_until TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    init_db(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
+    finally:
+        conn.close()
+    assert "needs_review" in columns
+
+
+def test_feedback_storage_contains_only_derived_fields_and_can_be_corrected(tmp_path):
+    db_path = tmp_path / "triage.db"
+    assessed_at = "2026-07-03T10:00:00"
+
+    record_feedback(
+        db_path,
+        thread_id=7,
+        result_computed_at=assessed_at,
+        model_urgency="high",
+        urgency_correct=False,
+        corrected_urgency="med",
+        reply_worthy=True,
+        created_at=datetime(2026, 7, 3, 11, 0),
+    )
+    record_feedback(
+        db_path,
+        thread_id=7,
+        result_computed_at=assessed_at,
+        model_urgency="high",
+        urgency_correct=None,
+        corrected_urgency=None,
+        reply_worthy=False,
+        created_at=datetime(2026, 7, 3, 12, 0),
+    )
+
+    feedback = get_feedback(db_path)
+    assert feedback == [{
+        "thread_id": 7,
+        "result_computed_at": assessed_at,
+        "model_urgency": "high",
+        "urgency_correct": None,
+        "corrected_urgency": None,
+        "reply_worthy": 0,
+        "created_at": "2026-07-03T12:00:00",
+    }]
+    assert set(feedback[0]) == {
+        "thread_id",
+        "result_computed_at",
+        "model_urgency",
+        "urgency_correct",
+        "corrected_urgency",
+        "reply_worthy",
+        "created_at",
+    }
+
+
+def test_feedback_rejects_inconsistent_derived_values(tmp_path):
+    with pytest.raises(sqlite3.IntegrityError):
+        record_feedback(
+            tmp_path / "triage.db",
+            thread_id=1,
+            result_computed_at="2026-07-03T10:00:00",
+            model_urgency="high",
+            urgency_correct=True,
+            corrected_urgency="low",
+            reply_worthy=True,
+        )

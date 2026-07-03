@@ -5,6 +5,7 @@ Usage:
                                   [--lookback-days N] [--dest PATH]
                                   [--retriage-one | --retriage-all]
                                   [--confirm-retriage-all] [--call] [--keep-copy]
+                                  [--max-calls N]
 
 Copies chat.db read-only, uses it, then deletes the copy — no raw message
 data lingers on disk after this script exits. Pass --keep-copy to inspect
@@ -71,6 +72,24 @@ def _json_default(obj):
     if hasattr(obj, "isoformat"):
         return obj.isoformat()
     raise TypeError(f"not JSON serializable: {obj!r}")
+
+
+def _positive_int(value):
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def _apply_max_calls(to_triage, max_calls):
+    """Apply the same deterministic cap to previews and real calls."""
+    return to_triage if max_calls is None else to_triage[:max_calls]
+
+
+def _create_anthropic_client():
+    import anthropic
+
+    return anthropic.Anthropic()
 
 
 def _partition_candidates(
@@ -151,6 +170,11 @@ def _build_parser():
                               "days; pass a very large value to disable")
     parser.add_argument("--call", action="store_true",
                          help="actually call the Claude API; omit to only preview requests")
+    parser.add_argument(
+        "--max-calls",
+        type=_positive_int,
+        help="cap both previews and API calls to the first N eligible threads",
+    )
     retriage_group = parser.add_mutually_exclusive_group()
     retriage_group.add_argument(
         "--retriage-one",
@@ -207,6 +231,8 @@ def _run(chat_copy_path: Path, args):
         retriage_one=args.retriage_one,
         retriage_all=args.retriage_all,
     )
+    eligible_count = len(to_triage)
+    to_triage = _apply_max_calls(to_triage, args.max_calls)
 
     if unchanged:
         print(f"{len(unchanged)} already triaged with no new message since — skipped:")
@@ -224,43 +250,61 @@ def _run(chat_copy_path: Path, args):
         print("retriage-one mode: at most one API request and one stored-result replacement")
     elif args.retriage_all:
         print("retriage-all mode: all eligible prior results will be reassessed")
+    if len(to_triage) < eligible_count:
+        print(
+            f"max-calls cap applied: {len(to_triage)} of {eligible_count} "
+            "eligible candidate(s) will be processed"
+        )
     print(f"{len(to_triage)} candidate(s) proceeding to triage\n")
 
     client = None
     if args.call:
         print(f"API calls about to be made: {len(to_triage)}")
-        import anthropic
-        client = anthropic.Anthropic()
+        if to_triage:
+            client = _create_anthropic_client()
 
-    results = []
-    for candidate, thread_messages in to_triage:
-        thread_id = candidate["thread_id"]
-        profile = profiles_by_thread[thread_id]
+    succeeded = 0
+    failed = 0
+    try:
+        for candidate, thread_messages in to_triage:
+            thread_id = candidate["thread_id"]
+            profile = profiles_by_thread[thread_id]
 
-        print(f"=== thread_id={thread_id} ===")
+            print(f"=== thread_id={thread_id} ===")
 
+            if args.call:
+                # No payload/reasoning echo on real runs — see module docstring.
+                print(f"sending triage request ({len(thread_messages)} messages in context)")
+                try:
+                    result = run_triage(client, profile, thread_messages)
+                except Exception as exc:
+                    failed += 1
+                    print(f"request failed safely: {type(exc).__name__}\n")
+                    continue
+
+                result["thread_name"] = profile["thread_name"]
+                result["last_message_timestamp"] = (
+                    candidate["last_message_timestamp"].isoformat()
+                )
+                result["computed_at"] = datetime.now().isoformat()
+                upsert_results(args.dest, [result])
+                succeeded += 1
+                print(
+                    f"result: urgency={result['urgency']} "
+                    f"suggest_nudge={result['suggest_nudge']} "
+                    f"needs_review={result['needs_review']}"
+                )
+                print()
+            else:
+                request = _redacted_request(profile, thread_messages)
+                print(json.dumps(request, indent=2, default=_json_default))
+                print("\nredacted preview only — --call not passed; request not sent\n")
+    finally:
         if args.call:
-            # No payload/reasoning echo on real runs — see module docstring.
-            print(f"sending triage request ({len(thread_messages)} messages in context)")
-            result = run_triage(client, profile, thread_messages)
-            result["thread_name"] = profile["thread_name"]
-            result["last_message_timestamp"] = candidate["last_message_timestamp"].isoformat()
-            result["computed_at"] = datetime.now().isoformat()
-            print(f"result: urgency={result['urgency']} "
-                  f"suggest_nudge={result['suggest_nudge']}")
-            print()
-            results.append(result)
-        else:
-            request = _redacted_request(profile, thread_messages)
-            print(json.dumps(request, indent=2, default=_json_default))
-            print("\nredacted preview only — --call not passed; request not sent\n")
-
-    if args.call:
-        upsert_results(args.dest, results)
-        scrubbed = enforce_retention(args.dest)
-        print(f"wrote {len(results)} result(s) to {args.dest}")
-        print(f"retention enforced: {scrubbed} row(s) past the "
-              f"{RETENTION_DAYS}-day window had reasoning cleared")
+            scrubbed = enforce_retention(args.dest)
+            print(f"stored {succeeded} successful result(s); {failed} request(s) failed")
+            print(f"retention enforced: {scrubbed} row(s) past the "
+                  f"{RETENTION_DAYS}-day window had reasoning cleared")
 
 
 if __name__ == "__main__":

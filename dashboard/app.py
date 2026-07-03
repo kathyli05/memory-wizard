@@ -44,6 +44,7 @@ from triage.store_triage_results import (
     enforce_retention,
     get_active_results,
     get_last_triaged_timestamps,
+    record_feedback,
     snooze_result,
 )
 
@@ -140,6 +141,53 @@ def render_snooze_controls(thread_id: int):
             st.rerun()
 
 
+def render_feedback_controls(result: dict):
+    """Collect derived quality feedback; never store message or reasoning text."""
+    thread_id = result["thread_id"]
+    common = {
+        "db_path": TRIAGE_DB_PATH,
+        "thread_id": thread_id,
+        "result_computed_at": result["computed_at"],
+        "model_urgency": result["urgency"],
+    }
+
+    st.caption("Was this assessment useful?")
+    correct_col, wrong_col, irrelevant_col = st.columns(3)
+    with correct_col:
+        if st.button("Correct", key=f"feedback_correct_{thread_id}"):
+            record_feedback(
+                **common,
+                urgency_correct=True,
+                corrected_urgency=None,
+                reply_worthy=True,
+            )
+            st.rerun()
+    with wrong_col:
+        with st.popover("Wrong urgency"):
+            corrected = st.selectbox(
+                "Correct urgency",
+                ["low", "med", "high"],
+                key=f"feedback_urgency_{thread_id}",
+            )
+            if st.button("Save correction", key=f"feedback_save_{thread_id}"):
+                record_feedback(
+                    **common,
+                    urgency_correct=False,
+                    corrected_urgency=corrected,
+                    reply_worthy=True,
+                )
+                st.rerun()
+    with irrelevant_col:
+        if st.button("Not reply-worthy", key=f"feedback_irrelevant_{thread_id}"):
+            record_feedback(
+                **common,
+                urgency_correct=None,
+                corrected_urgency=None,
+                reply_worthy=False,
+            )
+            st.rerun()
+
+
 def render_card(result: dict, hours_by_thread: dict):
     thread_id = result["thread_id"]
     urgency = result["urgency"]
@@ -158,7 +206,11 @@ def render_card(result: dict, hours_by_thread: dict):
         else:
             st.caption("Reasoning no longer available — past the 14-day retention window.")
         if result["suggest_nudge"]:
-            st.caption("💡 Suggested: consider sending a nudge")
+            st.caption("💡 Suggested: remind me to reply")
+        if result["needs_review"]:
+            st.caption("⚠️ Needs review: the assessment was uncertain")
+
+        render_feedback_controls(result)
 
         col1, col2 = st.columns([1, 1])
         with col1:

@@ -1,13 +1,16 @@
 import json
 import sys
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.run_triage import (
+    _apply_max_calls,
     _build_parser,
     _partition_candidates,
     _redacted_request,
+    _run,
     main,
 )
 from triage.detect_unanswered import find_unanswered_threads
@@ -169,6 +172,8 @@ def test_preview_preserves_request_shape_but_redacts_private_strings():
     serialized = json.dumps(request)
 
     assert request["tool_choice"]["name"] == "emit_triage_assessment"
+    assert "needs_review" in request["tools"][0]["input_schema"]["required"]
+    assert "Use this urgency rubric consistently" in request["system"]
     assert "[REDACTED THREAD]" in serialized
     assert "[REDACTED SENDER]" in serialized
     assert "[REDACTED readable message 1]" in serialized
@@ -234,3 +239,76 @@ def test_retriage_context_is_capped_at_last_five_messages():
         "private message 5",
         "private message 6",
     ]
+
+
+def test_max_calls_must_be_positive_and_caps_preview_shape():
+    parser = _build_parser()
+
+    assert parser.parse_args(["--max-calls", "2"]).max_calls == 2
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--max-calls", "0"])
+
+    candidates = [(index, [index]) for index in range(4)]
+    assert _apply_max_calls(candidates, None) == candidates
+    assert _apply_max_calls(candidates, 2) == candidates[:2]
+
+
+def test_call_run_stores_partial_successes_and_enforces_retention(monkeypatch, capsys):
+    messages = [_message(1, "one"), _message(2, "two"), _message(3, "three")]
+    candidates = [_candidate(1), _candidate(2), _candidate(3)]
+    profiles = [
+        {
+            "thread_id": thread_id,
+            "thread_name": "private",
+            "median_response_latency_seconds_365d": None,
+            "message_count_90d": 1,
+            "messages_per_day_90d": 0.01,
+            "initiation_ratio_me_365d": None,
+        }
+        for thread_id in (1, 2, 3)
+    ]
+    stored = []
+    call_count = 0
+
+    def fake_run(client, profile, thread_messages):
+        nonlocal call_count
+        call_count += 1
+        if profile["thread_id"] == 2:
+            raise RuntimeError("private provider error")
+        return {
+            "thread_id": profile["thread_id"],
+            "urgency": "med",
+            "reasoning": "derived rationale",
+            "suggest_nudge": True,
+            "needs_review": False,
+        }
+
+    monkeypatch.setattr("scripts.run_triage.parse_messages", lambda _: messages)
+    monkeypatch.setattr("scripts.run_triage.find_unanswered_threads", lambda *a, **k: candidates)
+    monkeypatch.setattr("scripts.run_triage.compute_all_profiles", lambda _: profiles)
+    monkeypatch.setattr("scripts.run_triage.get_last_triaged_timestamps", lambda _: {})
+    monkeypatch.setattr("scripts.run_triage._create_anthropic_client", lambda: object())
+    monkeypatch.setattr("scripts.run_triage.run_triage", fake_run)
+    monkeypatch.setattr(
+        "scripts.run_triage.upsert_results",
+        lambda db_path, results: stored.extend(results),
+    )
+    monkeypatch.setattr("scripts.run_triage.enforce_retention", lambda _: 0)
+
+    args = SimpleNamespace(
+        threshold_hours=0,
+        lookback_days=7,
+        dest="temporary-test.db",
+        retriage_one=False,
+        retriage_all=False,
+        max_calls=None,
+        call=True,
+    )
+    _run("synthetic-copy.db", args)
+
+    output = capsys.readouterr().out
+    assert "API calls about to be made: 3" in output
+    assert "stored 2 successful result(s); 1 request(s) failed" in output
+    assert "private provider error" not in output
+    assert call_count == 3
+    assert [result["thread_id"] for result in stored] == [1, 3]
