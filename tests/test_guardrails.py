@@ -127,6 +127,8 @@ def test_dashboard_never_renders_untrusted_fields_as_markdown():
     app_src = (REPO_ROOT / "dashboard" / "app.py").read_text()
     assert "st.markdown(reasoning" not in app_src
     assert 'st.markdown(result["reasoning"]' not in app_src
+    assert 'st.markdown(result["next_action"]' not in app_src
+    assert 'st.text(f\'Next: {result["next_action"]}\')' in app_src
 
 
 def test_dashboard_feedback_is_separate_from_dismiss_and_nudge_wording_is_clear():

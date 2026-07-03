@@ -2,10 +2,9 @@
 
 Per CLAUDE.md: raw message text is deleted from our local DB after the
 retention period (default 14 days) — only derived signals persist past
-that window. `reasoning` is the one field here that's derived from message
-content (it can quote or paraphrase the messages it was computed from), so
-enforce_retention clears it past the window; `urgency`/`suggest_nudge` are
-already fully derived signals and are left alone.
+that window. `reasoning` and `next_action` can quote or paraphrase message
+content, so enforce_retention clears them past the window; boolean/category
+signals such as `urgency`, `action_required`, and `suggest_nudge` remain.
 
 Dashboard action state (status/snoozed_until) lives on this same row.
 upsert_results always resets a thread to 'pending' — it's only ever called
@@ -30,6 +29,8 @@ CREATE TABLE IF NOT EXISTS triage_results (
     thread_name TEXT,
     urgency TEXT NOT NULL,
     reasoning TEXT,
+    action_required INTEGER NOT NULL DEFAULT 0,
+    next_action TEXT,
     suggest_nudge INTEGER NOT NULL,
     needs_review INTEGER NOT NULL DEFAULT 0,
     last_message_timestamp TEXT NOT NULL,
@@ -107,11 +108,13 @@ CREATE INDEX IF NOT EXISTS idx_triage_call_log_run_id ON triage_call_log(run_id)
 
 _UPSERT = """
 INSERT INTO triage_results (
-    thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
+    thread_id, thread_name, urgency, reasoning, action_required, next_action,
+    suggest_nudge, needs_review,
     last_message_timestamp, computed_at, status, snoozed_until,
     run_id, prompt_version, prompt_fingerprint, model
 ) VALUES (
-    :thread_id, :thread_name, :urgency, :reasoning, :suggest_nudge, :needs_review,
+    :thread_id, :thread_name, :urgency, :reasoning, :action_required, :next_action,
+    :suggest_nudge, :needs_review,
     :last_message_timestamp, :computed_at, 'pending', NULL,
     :run_id, :prompt_version, :prompt_fingerprint, :model
 )
@@ -119,6 +122,8 @@ ON CONFLICT(thread_id) DO UPDATE SET
     thread_name=excluded.thread_name,
     urgency=excluded.urgency,
     reasoning=excluded.reasoning,
+    action_required=excluded.action_required,
+    next_action=excluded.next_action,
     suggest_nudge=excluded.suggest_nudge,
     needs_review=excluded.needs_review,
     last_message_timestamp=excluded.last_message_timestamp,
@@ -132,7 +137,8 @@ ON CONFLICT(thread_id) DO UPDATE SET
 """
 
 _ACTIVE_RESULTS_QUERY = """
-SELECT thread_id, thread_name, urgency, reasoning, suggest_nudge, needs_review,
+SELECT thread_id, thread_name, urgency, reasoning, action_required, next_action,
+       suggest_nudge, needs_review,
        last_message_timestamp, computed_at, status, snoozed_until
 FROM triage_results
 WHERE status = 'pending'
@@ -154,6 +160,8 @@ def init_db(db_path: Path) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
         additive_columns = {
             "needs_review": "INTEGER NOT NULL DEFAULT 0",
+            "action_required": "INTEGER NOT NULL DEFAULT 0",
+            "next_action": "TEXT",
             "run_id": "TEXT",
             "prompt_version": "TEXT",
             "prompt_fingerprint": "TEXT",
@@ -178,6 +186,8 @@ def upsert_results(db_path: Path, results: list[dict]) -> None:
             [
                 {
                     **r,
+                    "action_required": int(r.get("action_required", False)),
+                    "next_action": r.get("next_action") or None,
                     "suggest_nudge": int(r["suggest_nudge"]),
                     "needs_review": int(r.get("needs_review", False)),
                     "run_id": r.get("run_id"),
@@ -375,7 +385,7 @@ def snooze_result(db_path: Path, thread_id: int, until: datetime) -> None:
 
 
 def enforce_retention(db_path: Path, *, now: datetime | None = None) -> int:
-    """Null out `reasoning` on rows older than RETENTION_DAYS. Returns the
+    """Null out `reasoning` and `next_action` past RETENTION_DAYS. Returns the
     number of rows scrubbed. Called by both triage runs and every dashboard
     load, so stale reasoning gets scrubbed even if triage stops running."""
     now = now or datetime.now()
@@ -385,8 +395,8 @@ def enforce_retention(db_path: Path, *, now: datetime | None = None) -> int:
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(
-            "UPDATE triage_results SET reasoning = NULL "
-            "WHERE computed_at < ? AND reasoning IS NOT NULL",
+            "UPDATE triage_results SET reasoning = NULL, next_action = NULL "
+            "WHERE computed_at < ? AND (reasoning IS NOT NULL OR next_action IS NOT NULL)",
             (cutoff,),
         )
         conn.commit()

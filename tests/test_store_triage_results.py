@@ -46,6 +46,8 @@ def _seed(db_path, thread_id, *, urgency="med", computed_at=None):
         "thread_name": f"+1555000{thread_id:04d}",
         "urgency": urgency,
         "reasoning": f"reasoning for thread {thread_id}",
+        "action_required": True,
+        "next_action": f"Reply to thread {thread_id}.",
         "suggest_nudge": True,
         "needs_review": True,
         "last_message_timestamp": computed_at,
@@ -69,6 +71,8 @@ def test_upsert_writes_all_fields(tmp_path):
         "thread_name": "+15551234567",
         "urgency": "high",
         "reasoning": "They asked a direct question 3 days ago with no reply.",
+        "action_required": True,
+        "next_action": "Answer their direct question.",
         "suggest_nudge": True,
         "needs_review": True,
         "last_message_timestamp": last_message_at,
@@ -78,6 +82,8 @@ def test_upsert_writes_all_fields(tmp_path):
     row = _read_row(db_path, 1)
     assert row["urgency"] == "high"
     assert row["reasoning"] == "They asked a direct question 3 days ago with no reply."
+    assert row["action_required"] == 1
+    assert row["next_action"] == "Answer their direct question."
     assert row["suggest_nudge"] == 1
     assert row["needs_review"] == 1
     assert row["last_message_timestamp"] == last_message_at
@@ -94,6 +100,8 @@ def test_retention_clears_reasoning_past_window_but_keeps_derived_signals(tmp_pa
         "thread_name": "+15551234567",
         "urgency": "high",
         "reasoning": "This text should be gone after retention runs.",
+        "action_required": True,
+        "next_action": "Complete the old request.",
         "suggest_nudge": True,
         "last_message_timestamp": old_computed_at,
         "computed_at": old_computed_at,
@@ -104,6 +112,8 @@ def test_retention_clears_reasoning_past_window_but_keeps_derived_signals(tmp_pa
     assert scrubbed == 1
     row = _read_row(db_path, 1)
     assert row["reasoning"] is None
+    assert row["next_action"] is None
+    assert row["action_required"] == 1
     assert row["urgency"] == "high"
     assert row["suggest_nudge"] == 1
     assert row["computed_at"] == old_computed_at
@@ -242,7 +252,7 @@ def test_init_db_adds_needs_review_to_existing_results_table(tmp_path):
         columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
     finally:
         conn.close()
-    assert {"needs_review", "run_id", "prompt_version", "prompt_fingerprint", "model"} <= columns
+    assert {"needs_review", "action_required", "next_action", "run_id", "prompt_version", "prompt_fingerprint", "model"} <= columns
 
     conn = sqlite3.connect(db_path)
     try:

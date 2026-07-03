@@ -391,6 +391,7 @@ def _run(chat_copy_path: Path, args):
                 succeeded += 1
                 print(
                     f"result: urgency={result['urgency']} "
+                    f"action_required={result['action_required']} "
                     f"suggest_nudge={result['suggest_nudge']} "
                     f"needs_review={result['needs_review']}"
                 )

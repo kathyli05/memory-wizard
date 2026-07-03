@@ -5,7 +5,7 @@ from triage import triage_agent
 
 
 def test_prompt_fingerprint_is_deterministic_and_contains_no_runtime_data():
-    assert triage_agent.PROMPT_VERSION == "triage-v2"
+    assert triage_agent.PROMPT_VERSION == "triage-v3"
     first = triage_agent.prompt_fingerprint()
     second = triage_agent.prompt_fingerprint()
     assert first == second
@@ -26,6 +26,7 @@ def test_run_triage_captures_realistic_usage_metadata():
     response = SimpleNamespace(
         content=[SimpleNamespace(type="tool_use", input={
             "urgency": "high", "reasoning": "A fictional deadline is today.",
+            "action_required": True, "next_action": "Reply today.",
             "suggest_nudge": True, "needs_review": False,
         })],
         stop_reason="tool_use",
@@ -47,6 +48,8 @@ def test_run_triage_captures_realistic_usage_metadata():
         "is_from_me": False,
     }
     result = triage_agent.run_triage(client, profile, [message])
+    assert result["action_required"] is True
+    assert result["next_action"] == "Reply today."
     assert result["_usage"] == {
         "input_tokens": 321, "output_tokens": 45,
         "cache_creation_tokens": 100, "cache_read_tokens": 50,

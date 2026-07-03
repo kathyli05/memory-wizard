@@ -174,6 +174,9 @@ def test_preview_preserves_request_shape_but_redacts_private_strings():
 
     assert request["tool_choice"]["name"] == "emit_triage_assessment"
     assert "needs_review" in request["tools"][0]["input_schema"]["required"]
+    assert "action_required" in request["tools"][0]["input_schema"]["required"]
+    assert "next_action" in request["tools"][0]["input_schema"]["required"]
+    assert "provide availability" in request["system"]
     assert "Use this urgency rubric consistently" in request["system"]
     assert "Median response latency" not in serialized
     assert "[REDACTED THREAD]" in serialized
@@ -283,6 +286,8 @@ def test_call_run_stores_partial_successes_and_enforces_retention(
             "thread_id": profile["thread_id"],
             "urgency": "med",
             "reasoning": "derived rationale",
+            "action_required": True,
+            "next_action": "Confirm the synthetic request.",
             "suggest_nudge": True,
             "needs_review": False,
             "_usage": {
@@ -380,6 +385,7 @@ def test_capped_call_run_attempts_only_the_cap(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.run_triage._create_anthropic_client", lambda: object())
     monkeypatch.setattr("scripts.run_triage.run_triage", lambda *a: {
         "thread_id": a[1]["thread_id"], "urgency": "low", "reasoning": "derived",
+        "action_required": False, "next_action": "",
         "suggest_nudge": False, "needs_review": False,
         "_usage": {"input_tokens": 1, "output_tokens": 1,
                    "cache_creation_tokens": 0, "cache_read_tokens": 0},
