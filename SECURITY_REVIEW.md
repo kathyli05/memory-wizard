@@ -1,5 +1,19 @@
 # Security & Agentic-Risk Review — memory-wizard
 
+> **Remediation status (2026-07-03):** all findings fixed on this branch.
+> F1: `.streamlit/config.toml` pins localhost. F2: system-prompt hardening +
+> delimiter neutralization + 500-char reasoning cap in `triage_agent.py`;
+> dashboard renders `reasoning` via `st.text` and escapes `thread_name`.
+> F3: `--call` runs no longer print message text or reasoning. F4:
+> `enforce_retention` self-initializes and runs on every dashboard load.
+> F5: opt-out footers ("Reply STOP…") now count as automated, stripped
+> before the imperative override. F6: ephemeral copies get unique per-run
+> names, stale debris is swept, dashboard caches the live check (60s TTL).
+> F7: `requirements.txt` pinned exactly. F8: `data/` created 0700, copies
+> 0600. Guardrails: `tests/test_guardrails.py` fails the suite if
+> send/exec-capable code, write-mode source opens, markdown rendering of
+> untrusted fields, or a non-localhost bind ever appear.
+
 Reviewed: all of `ingestion/`, `contacts/`, `triage/`, `dashboard/`, `scripts/`,
 `tests/`, plus `CLAUDE.md` / `PROJECT.md` constraints. Scope: AI/agentic risks,
 user-data exposure, and the three explicit concerns: (1) agents must never send

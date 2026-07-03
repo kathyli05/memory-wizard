@@ -4,6 +4,7 @@ No raw message text is accepted or stored here — only the aggregate
 fields produced by contacts.build_profiles.
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -43,7 +44,11 @@ ON CONFLICT(thread_id) DO UPDATE SET
 
 def init_db(db_path: Path) -> None:
     db_path = Path(db_path)
+    parent_existed = db_path.parent.exists()
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not parent_existed:
+        # owner-only when we created it (never tighten a pre-existing user dir)
+        os.chmod(db_path.parent, 0o700)
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)

@@ -41,5 +41,26 @@ def test_imperative_ask_overrides_shortcode_sender():
     assert not is_likely_automated("65123", "RSVP by Friday — are you coming?")
 
 
-def test_stop_keyword_overrides_filter():
-    assert not is_likely_automated("782929", "Reply STOP to unsubscribe from alerts.")
+def test_opt_out_footer_is_treated_as_automated_not_as_an_ask():
+    # "Reply STOP to unsubscribe" is a compliance footer, not a real ask —
+    # it must not ride the reply/stop override into a paid API call.
+    assert is_likely_automated("782929", "Reply STOP to unsubscribe from alerts.")
+
+
+def test_marketing_spam_from_full_number_with_opt_out_footer_is_filtered():
+    assert is_likely_automated(
+        "+18885551234",
+        "FLASH SALE 🔥 40% off everything this weekend only! Text STOP to opt out.",
+    )
+
+
+def test_real_ask_survives_an_opt_out_footer():
+    # The footer is stripped, but the remaining genuine ask still overrides.
+    assert not is_likely_automated(
+        "65123",
+        "Reply Y to confirm your appointment for Friday. Reply STOP to cancel reminders.",
+    )
+
+
+def test_human_saying_stop_still_overrides():
+    assert not is_likely_automated("+15556667777", "can you stop by tomorrow?")

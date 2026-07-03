@@ -1,3 +1,6 @@
-anthropic
-pytest
-streamlit
+# Pinned exactly (SECURITY_REVIEW.md, F7): these packages run with read
+# access to the full Messages snapshot, so upgrades are deliberate acts —
+# bump the pin, review the changelog, don't float.
+anthropic==0.116.0
+pytest==9.1.1
+streamlit==1.58.0
