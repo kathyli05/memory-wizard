@@ -1,4 +1,4 @@
-"""Claude API triage agent — structured urgency assessment per thread.
+"""Claude API triage agent — versioned structured assessment per thread.
 
 Sends only what the task needs: one thread's contact profile summary plus
 its last 5 messages. Uses a forced tool call (strict schema) for structured
@@ -6,8 +6,12 @@ output rather than output_config.format, since that feature's documented
 model support doesn't confirm claude-sonnet-4-6.
 """
 
+import hashlib
+import json
+
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
+PROMPT_VERSION = "triage-v2"
 
 # Hard cap on stored/displayed reasoning. Bounds what an injected message can
 # smuggle into the dashboard via the model's output (SECURITY_REVIEW.md, F2).
@@ -18,7 +22,7 @@ managing ADHD-related response overload. You will be given a contact's \
 derived behavior profile and the last 5 messages of one unanswered thread. \
 Assess how urgent a reply is and whether the user should be nudged to \
 respond. Base urgency on the actual content and context of the messages, \
-not just the latency statistics.
+not on general contact behavior statistics.
 
 Use this urgency rubric consistently:
 - high: action is needed today or very soon because of an imminent deadline,
@@ -74,31 +78,40 @@ TRIAGE_TOOL = {
 }
 
 
+def prompt_contract() -> dict:
+    """Return the static, privacy-safe contract that controls model behavior."""
+    return {
+        "system": SYSTEM_PROMPT,
+        "tools": [TRIAGE_TOOL],
+        "model": MODEL,
+        "settings": {
+            "max_tokens": MAX_TOKENS,
+            "tool_choice": {"type": "tool", "name": "emit_triage_assessment"},
+        },
+    }
+
+
+def prompt_fingerprint() -> str:
+    """SHA-256 of static prompt inputs only; runtime/private data is excluded."""
+    canonical = json.dumps(
+        prompt_contract(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def last_n_messages(messages: list[dict], thread_id, n: int = 5) -> list[dict]:
     thread_messages = [m for m in messages if m["thread_id"] == thread_id]
     thread_messages.sort(key=lambda m: m["timestamp"])
     return thread_messages[-n:]
 
 
-def _format_duration(seconds: float) -> str:
-    if seconds < 3600:
-        return f"{seconds / 60:.0f} minutes"
-    if seconds < 86400:
-        return f"{seconds / 3600:.1f} hours"
-    return f"{seconds / 86400:.1f} days"
-
-
 def _profile_summary(profile: dict) -> str:
     lines = [f"Contact: {profile['thread_name']}"]
 
-    latency = profile.get("median_response_latency_seconds_365d")
+    message_count = profile["message_count_90d"]
     lines.append(
-        f"Median response latency from me (last 365 days): "
-        f"{_format_duration(latency) if latency is not None else 'no data'}"
-    )
-
-    lines.append(
-        f"Message frequency (last 90 days): {profile['message_count_90d']} messages "
+        f"Message frequency (last 90 days): {message_count} "
+        f"{'message' if message_count == 1 else 'messages'} "
         f"({profile['messages_per_day_90d']:.2f}/day)"
     )
 
@@ -166,4 +179,13 @@ def run_triage(client, profile: dict, thread_messages: list[dict]) -> dict:
     result = dict(tool_use.input)
     result["reasoning"] = (result.get("reasoning") or "")[:MAX_REASONING_CHARS]
     result["thread_id"] = profile["thread_id"]
+    usage = response.usage
+    result["_usage"] = {
+        "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+        "cache_creation_tokens": int(
+            getattr(usage, "cache_creation_input_tokens", 0) or 0
+        ),
+        "cache_read_tokens": int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+    }
     return result

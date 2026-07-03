@@ -242,7 +242,16 @@ def test_init_db_adds_needs_review_to_existing_results_table(tmp_path):
         columns = {row[1] for row in conn.execute("PRAGMA table_info(triage_results)")}
     finally:
         conn.close()
-    assert "needs_review" in columns
+    assert {"needs_review", "run_id", "prompt_version", "prompt_fingerprint", "model"} <= columns
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+    finally:
+        conn.close()
+    assert {"triage_runs", "triage_call_log"} <= tables
 
 
 def test_feedback_storage_contains_only_derived_fields_and_can_be_corrected(tmp_path):

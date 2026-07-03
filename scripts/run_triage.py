@@ -38,6 +38,8 @@ requires --confirm-retriage-all.
 import argparse
 import json
 import sys
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -59,11 +61,22 @@ from triage.detect_unanswered import (
 from triage.prefilter import automated_filter_reason
 from triage.store_triage_results import (
     RETENTION_DAYS,
+    complete_run,
+    create_run,
     enforce_retention,
     get_last_triaged_timestamps,
+    record_call,
     upsert_results,
 )
-from triage.triage_agent import build_request, last_n_messages, run_triage
+from triage.pricing import PRICING_VERSION, estimate_cost_usd
+from triage.triage_agent import (
+    MODEL,
+    PROMPT_VERSION,
+    build_request,
+    last_n_messages,
+    prompt_fingerprint,
+    run_triage,
+)
 
 DEFAULT_DEST = Path("./data/triage.db")
 
@@ -90,6 +103,31 @@ def _create_anthropic_client():
     import anthropic
 
     return anthropic.Anthropic()
+
+
+def _safe_error_type(exc: Exception) -> str:
+    """Map an exception to a stable category without storing its message."""
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return "timeout"
+    if "rate" in name and "limit" in name:
+        return "rate_limit"
+    if "auth" in name or "permission" in name:
+        return "authentication"
+    if "api" in name or "connection" in name:
+        return "provider_api"
+    if isinstance(exc, (ValueError, KeyError, TypeError)):
+        return "invalid_response"
+    return "unexpected"
+
+
+def _empty_usage():
+    return {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+    }
 
 
 def _partition_candidates(
@@ -258,13 +296,37 @@ def _run(chat_copy_path: Path, args):
     print(f"{len(to_triage)} candidate(s) proceeding to triage\n")
 
     client = None
+    run_id = None
+    fingerprint = prompt_fingerprint()
     if args.call:
         print(f"API calls about to be made: {len(to_triage)}")
+        run_id = str(uuid.uuid4())
+        mode = (
+            "retriage_one" if args.retriage_one
+            else "retriage_all" if args.retriage_all
+            else "regular"
+        )
+        create_run(args.dest, {
+            "run_id": run_id,
+            "started_at": datetime.now().isoformat(),
+            "mode": mode,
+            "lookback_days": args.lookback_days,
+            "threshold_hours": args.threshold_hours,
+            "max_calls": args.max_calls,
+            "prompt_version": PROMPT_VERSION,
+            "prompt_fingerprint": fingerprint,
+            "model": MODEL,
+            "eligible_count": eligible_count,
+            "pricing_version": PRICING_VERSION,
+        })
         if to_triage:
             client = _create_anthropic_client()
 
     succeeded = 0
     failed = 0
+    attempted = 0
+    total_usage = _empty_usage()
+    total_cost = 0.0
     try:
         for candidate, thread_messages in to_triage:
             thread_id = candidate["thread_id"]
@@ -275,19 +337,57 @@ def _run(chat_copy_path: Path, args):
             if args.call:
                 # No payload/reasoning echo on real runs — see module docstring.
                 print(f"sending triage request ({len(thread_messages)} messages in context)")
+                attempted += 1
+                call_started_at = datetime.now().isoformat()
+                call_started = time.perf_counter()
                 try:
                     result = run_triage(client, profile, thread_messages)
                 except Exception as exc:
                     failed += 1
+                    record_call(args.dest, {
+                        "run_id": run_id,
+                        "thread_id": thread_id,
+                        "started_at": call_started_at,
+                        "latency_ms": round((time.perf_counter() - call_started) * 1000),
+                        "status": "failure",
+                        "error_type": _safe_error_type(exc),
+                        **_empty_usage(),
+                        "estimated_cost_usd": 0.0,
+                        "prompt_version": PROMPT_VERSION,
+                        "prompt_fingerprint": fingerprint,
+                        "model": MODEL,
+                    })
                     print(f"request failed safely: {type(exc).__name__}\n")
                     continue
 
+                usage = result.pop("_usage", _empty_usage())
+                cost = estimate_cost_usd(usage)
+                for name in total_usage:
+                    total_usage[name] += usage[name]
+                total_cost += cost
                 result["thread_name"] = profile["thread_name"]
                 result["last_message_timestamp"] = (
                     candidate["last_message_timestamp"].isoformat()
                 )
                 result["computed_at"] = datetime.now().isoformat()
+                result["run_id"] = run_id
+                result["prompt_version"] = PROMPT_VERSION
+                result["prompt_fingerprint"] = fingerprint
+                result["model"] = MODEL
                 upsert_results(args.dest, [result])
+                record_call(args.dest, {
+                    "run_id": run_id,
+                    "thread_id": thread_id,
+                    "started_at": call_started_at,
+                    "latency_ms": round((time.perf_counter() - call_started) * 1000),
+                    "status": "success",
+                    "error_type": None,
+                    **usage,
+                    "estimated_cost_usd": cost,
+                    "prompt_version": PROMPT_VERSION,
+                    "prompt_fingerprint": fingerprint,
+                    "model": MODEL,
+                })
                 succeeded += 1
                 print(
                     f"result: urgency={result['urgency']} "
@@ -301,8 +401,24 @@ def _run(chat_copy_path: Path, args):
                 print("\nredacted preview only — --call not passed; request not sent\n")
     finally:
         if args.call:
+            complete_run(args.dest, run_id, {
+                "completed_at": datetime.now().isoformat(),
+                "attempted_count": attempted,
+                "success_count": succeeded,
+                "failure_count": failed,
+                **total_usage,
+                "estimated_cost_usd": total_cost,
+            })
             scrubbed = enforce_retention(args.dest)
             print(f"stored {succeeded} successful result(s); {failed} request(s) failed")
+            print(
+                "usage: "
+                f"input={total_usage['input_tokens']} "
+                f"output={total_usage['output_tokens']} "
+                f"cache_create={total_usage['cache_creation_tokens']} "
+                f"cache_read={total_usage['cache_read_tokens']} "
+                f"estimated_cost=${total_cost:.6f}"
+            )
             print(f"retention enforced: {scrubbed} row(s) past the "
                   f"{RETENTION_DAYS}-day window had reasoning cleared")
 

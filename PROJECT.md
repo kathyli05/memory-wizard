@@ -41,8 +41,9 @@ behalf (what's urgent, what's worth keeping) without being either useless
 ### Pipeline
 1. Ingestion: copy `~/Library/Messages/chat.db` to `./data/chat_copy.db`,
    parse via sqlite3 (timestamps are nanoseconds since 2001 epoch — convert)
-2. Contact profiles: per-thread median response latency, message frequency
-   (90 days), initiation ratio — stored as derived signals only
+2. Contact profiles: per-thread reply-rate timing buckets with sample counts,
+   message frequency (90 days), and initiation ratio — stored as derived
+   signals only and kept out of urgency scoring
 3. Unanswered thread detection: deterministic, no AI — last message
    is_from_me=0 and older than configurable threshold (default 0h)
 4. Triage agent: Claude API call per candidate thread, sending contact
