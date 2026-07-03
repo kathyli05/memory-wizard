@@ -1,0 +1,13 @@
+.graphify_python
+.graphify_root
+.graphify_detect.json
+.graphify_ast.json
+.graphify_semantic.json
+.graphify_extract.json
+.graphify_analysis.json
+.graphify_uncached.txt
+.graphify_cached.json
+.graphify_semantic_new.json
+.graphify_chunk_*.json
+.graphify_labels.json
+.needs_update
