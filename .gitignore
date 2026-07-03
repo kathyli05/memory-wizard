@@ -1,6 +1,9 @@
 # Local data — real message copies must never be committed
 data/
 
+# Local agent journal / notes — external memory, never committed
+.local/
+
 # Generated test fixture (regenerate via tests/fixtures/make_fixture_db.py)
 tests/fixtures/fixture_chat.db
 
